@@ -1,0 +1,5 @@
+# CaptureImage.srv
+# 请求：无参数（拍一张就行）
+---
+# 响应：是否成功
+bool result

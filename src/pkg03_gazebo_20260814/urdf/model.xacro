@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<robot name="basic_diff_drive_robot_gazebo" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="parts/base.urdf.xacro"/>
+  <xacro:include filename="parts/wheel.urdf.xacro"/>
+  <xacro:include filename="parts/caster.urdf.xacro"/>
+  <xacro:include filename="parts/sensors.urdf.xacro"/>
+  <xacro:include filename="parts/plugins.urdf.xacro"/>
+
+  <xacro:drive_wheel_module_gazebo prefix="left" x="-0.06" y="0.12" side="1"/>
+  <xacro:drive_wheel_module_gazebo prefix="right" x="-0.06" y="-0.12" side="-1"/>
+
+  <xacro:caster_wheel_gazebo x="0.12" y="0" z="-0.025"/>
+
+  <xacro:diff_drive_plugin/>
+
+</robot>

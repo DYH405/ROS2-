@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<robot name="caster_gazebo_module" xmlns:xacro="http://www.ros.org/wiki/xacro">
+ 
+  <xacro:property name="caster_radius" value="0.025"/>
+  <xacro:property name="caster_mass" value="0.05"/>
+ 
+  <xacro:macro name="caster_wheel_gazebo" params="x y z">
+ 
+    <link name="caster_link">
+      <visual>
+        <geometry><sphere radius="${caster_radius}"/></geometry>
+        <material name="caster_orange"/>
+      </visual>
+      <collision>
+        <geometry><sphere radius="${caster_radius}"/></geometry>
+      </collision>
+      <xacro:sphere_inertial mass="${caster_mass}" radius="${caster_radius}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:sphere_inertial>
+    </link>
+ 
+    <joint name="base_to_caster_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="caster_link"/>
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
+    </joint>
+ 
+    <gazebo reference="caster_link">
+      <material>Gazebo/Orange</material>
+      <mu1>0.1</mu1>
+      <mu2>0.1</mu2>
+    </gazebo>
+ 
+  </xacro:macro>
+ 
+</robot>

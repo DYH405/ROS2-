@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<robot name="sensors_gazebo_module" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:include filename="sensors/lidar.urdf.xacro"/>
+  <xacro:include filename="sensors/imu.urdf.xacro"/>
+  <xacro:include filename="sensors/camera.urdf.xacro"/>
+</robot>

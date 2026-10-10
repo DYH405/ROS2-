@@ -1,0 +1,13 @@
+build/
+install/
+log/
+bag_data/
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+.marscode/
+.DS_Store
+*.swp
+*~
+.git_broken_backup

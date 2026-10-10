@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<robot name="wheel_gazebo_module" xmlns:xacro="http://www.ros.org/wiki/xacro">
+ 
+  <xacro:property name="motor_l" value="0.06"/>
+  <xacro:property name="motor_w" value="0.04"/>
+  <xacro:property name="motor_h" value="0.04"/>
+  <xacro:property name="motor_mass" value="0.15"/>
+ 
+  <xacro:property name="wheel_radius" value="0.05"/>
+  <xacro:property name="wheel_length" value="0.02"/>
+  <xacro:property name="wheel_mass" value="0.12"/>
+ 
+  <xacro:property name="shaft_radius" value="0.003"/>
+  <xacro:property name="shaft_length" value="0.02"/>
+ 
+  <xacro:macro name="drive_wheel_module_gazebo" params="prefix x y side">
+ 
+    <link name="${prefix}_motor_link">
+      <visual>
+        <geometry><box size="${motor_w} ${motor_l} ${motor_h}"/></geometry>
+        <material name="motor_black"/>
+      </visual>
+      <visual>
+        <origin xyz="0 ${side * (motor_l / 2.0 + shaft_length / 2.0)} 0" rpy="${PI/2.0} 0 0"/>
+        <geometry><cylinder radius="${shaft_radius}" length="${shaft_length}"/></geometry>
+        <material name="shaft_silver"/>
+      </visual>
+      <collision>
+        <geometry><box size="${motor_w} ${motor_l} ${motor_h}"/></geometry>
+      </collision>
+      <xacro:box_inertial mass="${motor_mass}" x="${motor_w}" y="${motor_l}" z="${motor_h}">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:box_inertial>
+    </link>
+ 
+    <joint name="${prefix}_motor_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${prefix}_motor_link"/>
+      <origin xyz="${x} ${y} 0" rpy="0 0 0"/>
+    </joint>
+ 
+    <link name="${prefix}_wheel_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${PI/2.0} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_length}"/></geometry>
+        <material name="wheel_blue"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${PI/2.0} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_length}"/></geometry>
+      </collision>
+      <xacro:cylinder_inertial mass="${wheel_mass}" radius="${wheel_radius}" length="${wheel_length}">
+        <origin xyz="0 0 0" rpy="${PI/2.0} 0 0"/>
+      </xacro:cylinder_inertial>
+    </link>
+ 
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="${prefix}_motor_link"/>
+      <child link="${prefix}_wheel_link"/>
+      <origin xyz="0 ${side * (motor_l / 2.0 + shaft_length + wheel_length / 2.0)} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+ 
+    <gazebo reference="${prefix}_motor_link">
+      <material>Gazebo/Black</material>
+    </gazebo>
+ 
+    <gazebo reference="${prefix}_wheel_link">
+      <material>Gazebo/Blue</material>
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+    </gazebo>
+ 
+  </xacro:macro>
+ 
+</robot>
