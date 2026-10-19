@@ -11,3 +11,4 @@ __pycache__/
 *.swp
 *~
 .git_broken_backup
+img_*.png
