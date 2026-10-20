@@ -45,7 +45,7 @@ sleep 3
 ros2 launch nav2_bringup bringup_launch.py \
   use_sim_time:=True \
   map:=/home/robot/ros2_ws/src/pkg03_gazebo_20260814/maps/my_map.yaml \
-  params_file:=/home/robot/ros2_ws/src/pkg03_gazebo_20260814/config/nav2_params.yaml &
+  params_file:=/home/robot/ros2_ws/src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml &
 NAV2_PID=$!
 sleep 2.5
 
