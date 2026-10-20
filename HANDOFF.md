@@ -296,3 +296,62 @@
 - 远端：`https://github.com/DYH405/ROS2-.git`
 - 提交数：5
 - 旧 .git 备份：`.git_broken_backup/`（已在 .gitignore 中排除）
+
+---
+
+## 九、2026-10-19 更新：bag_analyzer 扩展 /plan 支持
+
+### 9.1 本次完成内容
+
+| 功能 | 说明 |
+|:---|:---|
+| `read_all_messages()` | 合并遍历，一次读取 `/odom` + `/plan`，解决 SequentialReader 只能遍历一次的问题 |
+| `plot_plan()` | 读取 `/plan`（nav_msgs/msg/Path），绘制最后一条规划路径，保存为 `planned_path.png` |
+| `main()` 更新 | 调用 `read_all_messages` + `plot_plan`，打印 plan 数据预览 |
+| 新 bag 录制 | `bag_20261017_234254`：217s、7话题完整数据、136条/plan |
+| 验证通过 | `python3 scripts/bag_analyzer.py bag_data/bag_20261017_234254` 成功生成 trajectory.png + planned_path.png |
+
+### 9.2 关键设计决策
+
+- **SequentialReader 单次遍历**：`read_odom_messages` 和 `read_plan_messages` 合并为 `read_all_messages`，用 `if/elif` 在同一 while 循环中处理多话题
+- **`/plan` 数据结构**：`plan_data = [(t, [(x,y),...]), ...]`，每条 Path 消息存为一组点（与 `/odom` 每条消息一个点不同）
+- **`plot_plan` 默认画最后一条**：当前仅绘制最后一条规划路径，完整 reference path 需要拼接
+
+### 9.3 待完成：plan 分组拼接 → reference path
+
+多点巡逻导航中，136 条 `/plan` 属于不同导航目标，不能只取最后一条。需要：
+
+1. **`group_plans_by_goal(plan_data, threshold=0.5)`**：按终点坐标分组（同一目标的重规划终点不变，终点距离 > 0.5m 视为新目标）
+2. **`build_reference_path(goal_groups)`**：每组取最后一条 plan，拼接为完整 reference path
+3. **`plot_comparison(odom_data, ref_points, bag_path)`**：reference path vs 实际轨迹，同一画布叠加，保存为 `comparison.png`
+4. **统计报告**：路径长度、平均速度、耗时、位置误差
+
+> 虚拟机 `bag_analyzer.py` 中 `group_plans_by_goal` 已留注释占位，主机上已完成。
+
+### 9.4 本次踩坑
+
+| 坑 | 现象 | 原因 | 解决 |
+|:---|:---|:---|:---|
+| SequentialReader 二次遍历为空 | `plan_data` 始终为空列表 | 第一次遍历后指针到末尾，`has_next()` 返回 False | 合并为 `read_all_messages`，一次遍历 |
+| plan 数据缩进错误 | 同一条路径被重复添加 N 次 | `if t0`/`t`/`append` 缩进在 `for` 循环内部 | 移到 `for` 循环外面（坑6同类问题） |
+| 函数名拼写 | `read_plan_maessages` | 多打了一个 `a` | 改为 `read_plan_messages` |
+
+### 9.5 新 bag 数据概况
+
+| Bag | 时长 | /odom | /plan | /scan | /cmd_vel | /amcl_pose | /tf | /tf_static |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `bag_20261017_231931` | ~28s | 1374 | 13 | 275 | 257 | 10 | 2157 | 1 |
+| `bag_20261017_233550` | ~30s | 1431 | 18 | 287 | 344 | 11 | 1215 | 1 |
+| `bag_20261017_234254` | ~217s | 10583 | 136 | 2117 | 2817 | 126 | 3306 | 1 |
+
+### 9.6 待打磨任务更新
+
+原 4.1 节高优先级任务进度：
+
+| 任务 | 状态 |
+|:---|:---:|
+| bag_analyzer 支持 /plan | ✅ 已完成 |
+| bag_analyzer 支持 /scan | 🔴 待完成 |
+| 规划路线 vs 实际轨迹对比图 | 🔴 待完成（需先完成 plan 分组拼接） |
+| bag_analyzer 统计报告 | 🔴 待完成 |
+| 录制新 bag（7话题完整数据） | ✅ 已完成（bag_20261017_234254） |
