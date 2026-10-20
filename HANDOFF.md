@@ -44,8 +44,10 @@
 
 - 地图：`src/pkg03_gazebo_20260814/maps/my_map.yaml` + `my_map.pgm`
 - Nav2 参数：`src/pkg03_gazebo_20260814/config/nav2_params.yaml`
-- 巡逻节点：`autopartol_robot` — 7个巡逻点 + 超时机制
+- 巡逻节点：`autopartol_robot` — 8个巡逻点 + 超时机制
 - 联合启动：`autopartol.launch.py`（巡逻+语音+图像）
+
+> ⚠️ **IMU 状态说明**：当前 IMU（`/imu/data`）仅作为 Gazebo 仿真传感器存在，**未接入 `robot_localization` / EKF 融合链路**。定位仍依赖 AMCL（基于 `/scan` + `/odom`），不属于多传感器融合定位。如需融合，需额外引入 `robot_localization` 节点并配置 EKF/UKF。
 
 ### 2.4 rosbag 录制 — `record_30s.sh`（已优化）
 
