@@ -26,6 +26,7 @@ def generate_launch_description():
         package="robot_vision",
         executable="image_capture_node",
         name="image_capture_node",
+        parameters=[{'img_save_path': '/home/robot/ros2_ws/patrol_images/'}],
         output="screen",
     )
 
