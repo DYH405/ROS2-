@@ -1,6 +1,6 @@
 # ROS2 仿真导航项目 — 交接文档
 
-> 更新时间：2026-10-17
+> 更新时间：2026-10-20
 > 当前阶段：第一阶段（理想仿真基线）— 打磨中
 
 ---
@@ -357,3 +357,78 @@
 | 规划路线 vs 实际轨迹对比图 | 🔴 待完成（需先完成 plan 分组拼接） |
 | bag_analyzer 统计报告 | 🔴 待完成 |
 | 录制新 bag（7话题完整数据） | ✅ 已完成（bag_20261017_234254） |
+
+---
+
+## 十、2026-10-20 更新：Hybrid 规划器切换 + 巡逻点修正 + 图片路径修复
+
+### 10.1 全局规划器切换：NavfnPlanner(Dijkstra) → SmacPlannerHybrid(DUBIN)
+
+| 项目 | 旧值 | 新值 |
+|:---|:---|:---|
+| 配置文件 | `nav2_params.yaml` | `nav2_params_hybrid.yaml`（新建） |
+| planner plugin | `nav2_navfn_planner/NavfnPlanner` | `nav2_smac_planner/SmacPlannerHybrid` |
+| motion_model | 无 | `DUBIN`（只前进不后退） |
+| minimum_turning_radius | 无 | `0.26`（从速度参数推算） |
+| expected_planner_frequency | 20.0 | 5.0（Hybrid 在 SE2 三维空间搜索，计算量更大） |
+| max_iterations | 无 | 1000000 |
+| smoother | 无 | 开启 SimpleSmoother（holonomic: False） |
+| use_astar | false | 删除（Hybrid 内部就是 A*） |
+| tolerance | 0.5 | 删除（Hybrid 通过代价地图膨胀处理容差） |
+
+**关键设计决策**：
+- **DUBIN 而非 REEDS_SHEPP**：当前场景不需要倒车，DUBIN 运动模型更简单、搜索空间更小、规划更快
+- **minimum_turning_radius = 0.26**：由 `max_vel_x / max_vel_theta` 推算，如不合适可调整
+- **expected_planner_frequency 降至 5Hz**：Hybrid 在 (x, y, θ) 三维空间搜索，20Hz 可能跑不到
+
+**效果**：全局规划路径从带尖角的折线变为平滑曲线（圆弧转弯），导航更流畅
+
+### 10.2 巡逻点修正
+
+#### 10.2.1 删除原点目标 (0,0,0)
+
+- **问题**：巡逻点第一个为 `(0.0, 0.0, 0.0)`，小车在初始位置就往原点跑，导致 AMCL 粒子收敛到地图原点附近，原点附近特征不明显，引发定位跳变
+- **解决**：删除第一个巡逻点，从 `(2.0, 1.0, 0.0)` 开始
+
+#### 10.2.2 yaw 角度归一化到 [-π, π]
+
+- **问题**：最后两个巡逻点 yaw 值超出 [-π, π] 范围（3.927 和 5.498），AMCL 运动模型更新时角度差过大，导致粒子发散、定位失效
+- **修正**：
+
+| 点 | 旧 yaw | 新 yaw | 角度 |
+|:---:|:---|:---|:---|
+| 3 | 2.358 | 2.356 | 135°（微调精确值） |
+| 6 | 3.927 | -2.356 | 225° → -135° |
+| 7 | 5.498 | -0.785 | 315° → -45° |
+
+**原理**：AMCL 粒子角度更新是加法 `θ_new = θ_old + Δθ + noise`，yaw 在 [-π, π] 范围内可以避免跨越 ±π 边界的角度跳变问题
+
+### 10.3 图片保存路径修复
+
+- **问题**：`img_save_path` 默认值为空字符串，`cv2.imwrite()` 用相对路径保存到 CWD（当前工作目录），从不同目录启动脚本导致图片散落在 `~/ros2_ws/` 和 `~/ros2_ws/scripts/` 等多处
+- **解决**：
+  - `autopartol.launch.py` 中传入 `img_save_path: '/home/robot/ros2_ws/patrol_images/'`（绝对路径，末尾带 `/`）
+  - 创建专用目录 `~/ros2_ws/patrol_images/`
+- **根因**：launch 文件未传参数 → 节点用空字符串默认值 → 相对路径 → CWD 依赖
+
+### 10.4 AMCL 跳变问题诊断记录
+
+| 现象 | 原因 | 解决 |
+|:---|:---|:---|
+| 小车在初始位置往 (0,0,0) 跑 | 巡逻点第一个就是原点 | 删除原点巡逻点 |
+| 倒数第二个点定位失效 | yaw 超出 [-π, π]，粒子角度发散 | yaw 归一化 |
+| 雷达显示突然跳变 | 目标点附近特征不明显 + 角度异常 | 综合上述修正 |
+
+**后续调参方向**（如跳变仍未完全消除）：
+- 增大粒子数：`min_particles: 500→800, max_particles: 2000→4000`
+- 降低重采样频率：`resample_interval: 1→2`
+- 降低运动噪声：`alpha1~alpha4: 0.2→0.1`（仿真里程计较准）
+- 开启恢复机制：`recovery_alpha_fast: 0.0→0.1, recovery_alpha_slow: 0.0→0.001`
+
+### 10.5 关键文件索引更新
+
+| 文件 | 路径 | 说明 |
+|:---|:---|:---|
+| nav2_params_hybrid.yaml | `src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml` | Nav2 Hybrid 规划器配置（当前使用） |
+| nav2_params.yaml | `src/pkg03_gazebo_20260814/config/nav2_params.yaml` | Nav2 原始配置（Dijkstra，备用） |
+| patrol_images/ | `patrol_images/` | 巡逻截图统一保存目录 |
