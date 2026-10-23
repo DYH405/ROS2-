@@ -173,15 +173,9 @@
 
 ## 四、待打磨任务
 
-### 4.1 第一阶段补齐（高优先级）
+### 4.1 第一阶段基线（✅ 已完成，bag_analyzer 扩展见 4.5 暂缓区）
 
-| 优先级 | 任务 | 说明 |
-|:---:|:---|:---|
-| 🔴 | bag_analyzer 支持 /scan | 读取 LaserScan，绘制雷达扫描图 |
-| 🔴 | bag_analyzer 支持 /plan | 读取 Path，绘制规划路线 |
-| 🔴 | 规划路线 vs 实际轨迹对比图 | 同一画布叠加 /plan 和 /odom |
-| 🔴 | bag_analyzer 统计报告 | 路径长度、平均速度、耗时、位置误差 |
-| 🔴 | 录制新 bag（7话题完整数据） | 当前 bag_01 只有 /odom，需完整数据验证 |
+第一阶段基线任务均已完成，bag_analyzer 相关扩展功能统一延后（见 4.5）。
 
 ### 4.2 建立可复现基线（中优先级）
 
@@ -204,9 +198,22 @@
 | 优先级 | 任务 | 说明 |
 |:---:|:---|:---|
 | 🟡 | gazebo.sh 也封装话题检查 | 和 slam.sh 保持一致的代码风格 |
-| 🟡 | bag_analyzer 支持 /cmd_vel | 读取 Twist，绘制速度曲线 |
-| 🟢 | bag_analyzer 自动检测话题 | 根据 bag 中实际话题自动选择分析 |
-| 🟢 | bag_analyzer 命令行参数 | `--odom` `--scan` `--plan` 参数控制 |
+
+### 4.5 🔕 暂缓：bag_analyzer 扩展
+
+> **状态：全部暂缓，不作为当前工作的前置任务。** 第一阶段基线已建立（bag_analyzer 已支持 /odom + /plan 基本轨迹绘制），以下扩展功能留待后续第二阶段/第三阶段需要时再开启。
+
+| 任务 | 说明 | 原始出处 |
+|:---|:---|:---|
+| bag_analyzer 支持 /scan | 读取 LaserScan，绘制雷达扫描图 | 4.1 |
+| 规划路线 vs 实际轨迹对比图 | 同一画布叠加 /plan 和 /odom，需先完成 plan 分组拼接 | 4.1 |
+| bag_analyzer 统计报告 | 路径长度、平均速度、耗时、位置误差 | 4.1 + 9.3 |
+| `group_plans_by_goal` | 按终点坐标分组，`threshold=0.5` | 9.3 |
+| `build_reference_path` | 每组取最后一条 plan 拼接为完整 reference path | 9.3 |
+| `plot_comparison` | reference path vs 实际轨迹叠加 | 9.3 |
+| bag_analyzer 支持 /cmd_vel | 读取 Twist，绘制速度曲线 | 4.4 |
+| bag_analyzer 自动检测话题 | 根据 bag 中实际话题自动选择分析 | 4.4 |
+| bag_analyzer 命令行参数 | `--odom` `--scan` `--plan` 参数控制 | 4.4 |
 
 ---
 
@@ -319,14 +326,9 @@
 - **`/plan` 数据结构**：`plan_data = [(t, [(x,y),...]), ...]`，每条 Path 消息存为一组点（与 `/odom` 每条消息一个点不同）
 - **`plot_plan` 默认画最后一条**：当前仅绘制最后一条规划路径，完整 reference path 需要拼接
 
-### 9.3 待完成：plan 分组拼接 → reference path
+### 9.3 🔕 暂缓：plan 分组拼接 → reference path
 
-多点巡逻导航中，136 条 `/plan` 属于不同导航目标，不能只取最后一条。需要：
-
-1. **`group_plans_by_goal(plan_data, threshold=0.5)`**：按终点坐标分组（同一目标的重规划终点不变，终点距离 > 0.5m 视为新目标）
-2. **`build_reference_path(goal_groups)`**：每组取最后一条 plan，拼接为完整 reference path
-3. **`plot_comparison(odom_data, ref_points, bag_path)`**：reference path vs 实际轨迹，同一画布叠加，保存为 `comparison.png`
-4. **统计报告**：路径长度、平均速度、耗时、位置误差
+> **状态：暂缓，已迁入 4.5 统一管理。** 详细设计需求见 4.5 节 `group_plans_by_goal` / `build_reference_path` / `plot_comparison` 条目。
 
 > 虚拟机 `bag_analyzer.py` 中 `group_plans_by_goal` 已留注释占位，主机上已完成。
 
@@ -348,14 +350,14 @@
 
 ### 9.6 待打磨任务更新
 
-原 4.1 节高优先级任务进度：
+原 4.1 节高优先级任务进度（**bag_analyzer 扩展全部暂缓，见 4.5**）：
 
 | 任务 | 状态 |
 |:---|:---:|
 | bag_analyzer 支持 /plan | ✅ 已完成 |
-| bag_analyzer 支持 /scan | 🔴 待完成 |
-| 规划路线 vs 实际轨迹对比图 | 🔴 待完成（需先完成 plan 分组拼接） |
-| bag_analyzer 统计报告 | 🔴 待完成 |
+| bag_analyzer 支持 /scan | 🔕 暂缓（见 4.5） |
+| 规划路线 vs 实际轨迹对比图 | 🔕 暂缓（见 4.5） |
+| bag_analyzer 统计报告 | 🔕 暂缓（见 4.5） |
 | 录制新 bag（7话题完整数据） | ✅ 已完成（bag_20261017_234254） |
 
 ---
