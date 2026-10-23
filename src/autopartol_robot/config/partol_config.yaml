@@ -9,4 +9,4 @@
                   1.0,1.4,0.0,
                   -4.0,-0.5,-2.356,
                   4.0,-2.5,-0.785]
-    use_sim_time: false
+    use_sim_time: true                                                                                                                                                                                

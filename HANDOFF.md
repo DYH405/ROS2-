@@ -1,6 +1,6 @@
 # ROS2 仿真导航项目 — 交接文档
 
-> 更新时间：2026-10-20
+> 更新时间：2026-10-22
 > 当前阶段：第一阶段（理想仿真基线）— 打磨中
 
 ---
@@ -52,7 +52,7 @@
 ### 2.4 rosbag 录制 — `record_30s.sh`（已优化）
 
 - 路径：`src/pkg03_gazebo_20260814/scripts/record_30s.sh`
-- 录制话题：`/scan /tf /tf_static /cmd_vel /odom /plan /amcl_pose`（7个）
+- 录制话题：`/scan /tf /tf_static /cmd_vel /odom /plan /amcl_pose /imu/data /clock`（9个）
 - 特性：
   - 话题就绪检测：录制前等待 /odom /scan /cmd_vel 出现
   - 双模式停止：默认 Ctrl+C / `-w` 模式监听话题消失自动停止
@@ -432,3 +432,72 @@
 | nav2_params_hybrid.yaml | `src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml` | Nav2 Hybrid 规划器配置（当前使用） |
 | nav2_params.yaml | `src/pkg03_gazebo_20260814/config/nav2_params.yaml` | Nav2 原始配置（Dijkstra，备用） |
 | patrol_images/ | `patrol_images/` | 巡逻截图统一保存目录 |
+
+---
+
+## 十一、2026-10-22 更新：巡逻节点稳健性打磨
+
+### 11.1 本次完成内容
+
+| 编号 | 修复项 | 改动文件 | 说明 |
+|:---:|:---|:---|:---|
+| E | `spin_once` 超时一致性 | `partol_node.py` | 主循环与内层循环统一使用 `timeout_sec=0.0`（非阻塞轮转） |
+| F | 巡逻统计日志 | `partol_node.py` | 每轮结束打印成功/失败/超时/取消计数和耗时 |
+| A | 导航重试机制 | `partol_node.py` + `partol_config.yaml` | 单点失败后可重试 N 次，重试耗尽后可跳过或停止 |
+| C | `get_current_pose` 死循环消除 | `partol_node.py` | 去掉 `while rclpy.ok()` 误导性外层循环，调用方检查返回值 |
+
+### 11.2 use_sim_time 统一
+
+| 文件 | 改前 | 改后 |
+|:---|:---|:---|
+| `partol_config.yaml` | `use_sim_time: false` | `use_sim_time: true` |
+| `autopartol.launch.py` | 未传递 `use_sim_time` | 三个节点均传入 `use_sim_time=True` |
+
+**原因**：Nav2/Gazebo 全链路使用仿真时钟，巡逻节点用系统时钟会导致 TF 查找、超时判断等行为异常。
+
+### 11.3 导航重试机制设计
+
+**新增参数**（`partol_config.yaml` 可覆盖）：
+
+| 参数 | 默认值 | 说明 |
+|:---|:---|:---|
+| `nav_retry_count` | 2 | 单点最大重试次数（总共尝试 3 次：1 次原始 + 2 次重试） |
+| `nav_fail_action` | `skip` | 重试耗尽后行为：`skip` 跳过该点继续 / `stop` 停止整轮巡逻 |
+
+**重试逻辑**：
+
+```
+对每个目标点：
+  ├─ for attempt in range(retry+1):
+  │   ├─ succeeded → break 跳出重试
+  │   └─ 失败 → warn 日志 + 继续重试 / error 日志 + 重试耗尽
+  ├─ 成功 → 保存图片、记录位姿
+  └─ 失败 → 计数 + 根据 fail_action 决定跳过或停止
+```
+
+**设计决策**：
+- `timeout`/`failed`/`canceled`/`unknown` 四种失败状态均触发重试（简化实现，覆盖绝大多数场景）
+- 默认 `skip` 而非 `stop`：巡检任务更看重"尽量多覆盖"，且故障检测方向需要观察失败后的行为
+
+### 11.4 get_current_pose 修复
+
+| 改动 | 改前 | 改后 |
+|:---|:---|:---|
+| 去掉 `while rclpy.ok()` | 外层套了 `while` 死循环（实际只跑一次就 return） | 直接 `for` 循环重试，结构诚实 |
+| 调用方检查返回值 | `partol.get_current_pose()` 返回值被丢弃 | 赋值给 `pose_result`，None 时打 warn 日志 |
+| 重试日志 | 无序号 | 加 `({i+1}/{max_retries})` 序号 |
+| 错别字 | `坐标换` | `坐标变换` |
+
+### 11.5 待办记录
+
+| 项 | 优先级 | 说明 |
+|:---|:---:|:---|
+| B | 📌待办 | 导航超时时间改为可配置参数（当前硬编码 60s） |
+| D | 📌待办 | 图片保存加等待确认（当前异步无等待） |
+
+### 11.6 关键文件索引更新
+
+| 文件 | 路径 | 说明 |
+|:---|:---|:---|
+| partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 巡逻点配置 + 重试参数 + use_sim_time |
+| autopartol.launch.py | `src/autopartol_robot/launch/autopartol.launch.py` | 巡逻联合启动 + use_sim_time 传递 |

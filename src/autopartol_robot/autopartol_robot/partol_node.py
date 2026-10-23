@@ -26,6 +26,11 @@ class PartolNode(BasicNavigator):
         # 客户端-图像处理
         self.capture_client_ = self.create_client(CaptureImage,'capture_image')
 
+        # 重试机制
+        self.declare_parameter('nav_retry_count', 2) # 导航重试次数
+        self.declare_parameter('nav_fail_action', 'skip') # skip:跳过,stop:停止
+        self.nav_retry_count = self.get_parameter('nav_retry_count').value
+        self.nav_fail_action = self.get_parameter('nav_fail_action').value
     def get_pose_by_xyyaw(self,x,y,yaw):
         '''
         return PoseStamped
@@ -72,56 +77,48 @@ class PartolNode(BasicNavigator):
         start_time = self.get_clock().now() # 记录开始时间
         timeout = 60.0 # 超时时间
         self.goToPose(target_pose)
+        is_timeout = False # 超时标志位
         while not self.isTaskComplete():
+            rclpy.spin_once(self,timeout_sec=0.0) # 有就处理，没有就直接返回，处理积压回调
             # 超时处理
             elapsed = (self.get_clock().now() - start_time).nanoseconds / 1e9 # 转换为秒
             if elapsed > timeout:
                 self.cancelTask()
-                self.get_logger().info('导航超时,取消任务')
+                is_timeout = True
                 break
             # 导航中处理反馈
             feedback = self.getFeedback()
             self.get_logger().info(f'剩余距离：{feedback.distance_remaining}')
         # self.cancelTask()
-        # 结果处理
+        # 结果处理-统计信息
         result = self.getResult()
         if result == TaskResult.SUCCEEDED:
-            self.get_logger().info('导航成功')
-            return True
+            return 'succeeded', elapsed
         elif result == TaskResult.FAILED:
-            self.get_logger().error('导航失败')
-            return False
+            return 'failed', elapsed
         elif result == TaskResult.CANCELED:
-            self.get_logger().info('导航取消')
-            return False
-        elif result == TaskResult.UNKNOWN:
-            self.get_logger().error('导航未知')
-            return False
+            if is_timeout:
+                return 'timeout', elapsed
+            return 'canceled', elapsed
+        else:
+            return 'unknown', elapsed
     def get_current_pose(self):
         """
-        获取当前机器人位姿
+        获取当前机器人位姿，有限重试后返回
         """
-        while rclpy.ok():
-            max_retries = 5 # 最大重试次数
-            for i in range(max_retries):
-                try:
-                    result = self.buffer_.lookup_transform('map', 'base_footprint',
-                                                            rclpy.time.Time(seconds=0.0),
-                                                            rclpy.time.Duration(seconds=1.0))
-                    transform = result.transform
-                    self.get_logger().info(f'平移：{transform.translation}')
-                    # self.get_logger().info(f'旋转：{transform.rotation}')
-                    # rotatiomn_euler = euler_from_quaternion([transform.rotation.x,
-                    #                                         transform.rotation.y,
-                    #                                         transform.rotation.z,
-                    #                                         transform.rotation.w])
-                    # self.get_logger().info(f'旋转欧拉角：{rotatiomn_euler}')
-                    return transform
-                except Exception as e:
-                    self.get_logger().info(f'获取坐标换失败：{str(e)}')
-            self.get_logger().error('获取坐标换失败，请检查导航是否正常')
-            #self.wait_for_seconds(1.0)
-            return None
+        max_retries = 5
+        for i in range(max_retries):
+            try:
+                result = self.buffer_.lookup_transform('map', 'base_footprint',
+                                                        rclpy.time.Time(seconds=0.0),
+                                                        rclpy.time.Duration(seconds=1.0))
+                transform = result.transform
+                self.get_logger().info(f'平移：{transform.translation}')
+                return transform
+            except Exception as e:
+                self.get_logger().info(f'获取坐标变换失败({i+1}/{max_retries})：{str(e)}')
+        self.get_logger().error('获取坐标变换失败，请检查导航是否正常')
+        return None
 
     def speak_text(self,text):
         """
@@ -189,28 +186,61 @@ def main():
 
     partol.init_robot_pose() # 初始化机器人位姿
     partol.speak_text('初始化位置完成')
-
-
+    # 初始化计数
+    success_count = 0 # 成功计数
+    timeout_count = 0 # 超时计数
+    canceled_count = 0 # 取消计数
+    failed_count = 0 # 失败计数
+    round_count = 0 # 轮数计数
 
     while rclpy.ok():
+
+        # 轮次计时-开始
+        round_start_time = partol.get_clock().now()
         partol_failed = False # 导航失败标志
-        rclpy.spin_once(partol,timeout_sec=1.0)
+        rclpy.spin_once(partol,timeout_sec=0.0) # 有就处理，没有就直接返回
         points = partol.get_target_points()
+        round_count += 1 # 轮数计数
         for point in points:
-            rclpy.spin_once(partol,timeout_sec=0.0)
+            rclpy.spin_once(partol,timeout_sec=0.0) # 有就处理，没有就直接返回
             x,y,yaw = point[0],point[1],point[2]
             target_pose = partol.get_pose_by_xyyaw(x,y,yaw) # 目标点
             partol.speak_text(f'正在导航到目标点：{x},{y},{yaw}')
-            success = partol.nav_to_pose(target_pose)
-            if success:
+            nav_succeeded = False
+            for attempt in range(partol.nav_retry_count + 1):
+                status, nav_time = partol.nav_to_pose(target_pose)
+                if status == 'succeeded':
+                    nav_succeeded = True
+                    break
+                if attempt < partol.nav_retry_count:
+                    partol.get_logger().warn(
+                        f'导航{status}，第{attempt+1}次重试（共{partol.nav_retry_count}次）')
+                else:
+                    partol.get_logger().error(f'导航{status}，重试耗尽')
+            if nav_succeeded:
+                success_count += 1
                 partol.speak_text(f'已经到达目标点：{x},{y},{yaw}，正在保存图片...')
                 partol.record_img()
-                partol.get_current_pose()
+                pose_result = partol.get_current_pose()
+                if pose_result is None:
+                    partol.get_logger().warn(f'目标点{x},{y},{yaw}位姿获取失败，跳过记录')
             else:
-                # 导航失败-停止
-                partol.speak_text(f'导航失败，请检查导航参数')
-                partol_failed = True
-                break
+                failed_count += 1
+                if status == 'timeout':
+                    timeout_count += 1
+                elif status == 'canceled':
+                    canceled_count += 1
+                if partol.nav_fail_action == 'stop':
+                    partol_failed = True
+                    break
+        round_elapsed_time = (partol.get_clock().now() - round_start_time).nanoseconds / 1e9
+        total_points = len(points)  # 总目标点数
+        partol.get_logger().info(
+            f'第{round_count}轮完成，'
+            f'成功{success_count}/{total_points},'
+            f'失败{failed_count}, 超时{timeout_count},'
+            f'耗时{round_elapsed_time:.1f}秒'
+            )
         if partol_failed:
             break
     rclpy.shutdown()

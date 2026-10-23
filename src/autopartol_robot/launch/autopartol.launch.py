@@ -13,6 +13,8 @@ def generate_launch_description():
         name="partol_node",
         parameters=[default_param_path],
         output="screen",
+        use_sim_time=True,   # 开启仿真时间
+        
     )
 
     speaker_node = launch_ros.actions.Node( # 语音节点-子节点，用于语音播报
@@ -20,6 +22,7 @@ def generate_launch_description():
         executable="speech_node",
         name="speech_node",
         output="screen",
+        use_sim_time=True,   # 开启仿真时间
     )
 
     image_capture_node = launch_ros.actions.Node(# 图片处理节点-子节点
@@ -28,6 +31,7 @@ def generate_launch_description():
         name="image_capture_node",
         parameters=[{'img_save_path': '/home/robot/ros2_ws/patrol_images/'}],
         output="screen",
+        use_sim_time=True,   # 开启仿真时间
     )
 
     return launch.LaunchDescription([
