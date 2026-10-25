@@ -3,9 +3,11 @@
 cleanup() {
   echo ""
   echo "[Ctrl+C] 正在关闭所有进程..."
- 
-  echo "关闭 RViz2..."
-  kill $RVIZ2_PID 2>/dev/null
+  
+  if [[ $NO_RVIZ == false ]]; then
+    echo "关闭 RViz2..."
+    kill $RVIZ2_PID 2>/dev/null
+  fi
  
   echo "优雅终止 Nav2 父进程..."
   pkill -15 -f "nav2_bringup"
@@ -26,7 +28,13 @@ cleanup() {
   echo "所有进程已关闭，共享内存已清理"
   exit 0
 }
- 
+NO_RVIZ=false 
+while [[ $# -gt 0 ]]; do # gt-greather-than
+  case $1 in
+    --no-rviz) NO_RVIZ=true ;shift ;; # ;; 分支结束
+    *) shift ;; # shift 左移一位，参数丢弃
+  esac
+done
 trap cleanup SIGINT SIGTERM
  
 pkill -9 -f gzserver 2>/dev/null
@@ -49,10 +57,12 @@ ros2 launch nav2_bringup bringup_launch.py \
 NAV2_PID=$!
 sleep 2.5
 
+if [[ $NO_RVIZ == false ]]; then
 ros2 run rviz2 rviz2 \
   -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz \
   --ros-args -p use_sim_time:=true &
 RVIZ2_PID=$!
+fi
 
 echo "所有服务已启动 (Gazebo=$GAZEBO_PID, Nav2=$NAV2_PID, RViz2=$RVIZ2_PID)"
 echo "按 Ctrl+C 关闭所有进程"

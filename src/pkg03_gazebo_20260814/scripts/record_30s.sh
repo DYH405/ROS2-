@@ -83,7 +83,7 @@ ros2 bag record \
 /odom \
 /plan \
 /amcl_pose \
-/imu/data \
+/imu \
 /clock \
 /navigate_to_pose/_action/status & # 后台运行，记录进程ID
 RECORD_PID=$!

@@ -29,8 +29,10 @@ class PartolNode(BasicNavigator):
         # 重试机制
         self.declare_parameter('nav_retry_count', 2) # 导航重试次数
         self.declare_parameter('nav_fail_action', 'skip') # skip:跳过,stop:停止
+        self.declare_parameter('max_rounds', 3) # 最大循环次数
         self.nav_retry_count = self.get_parameter('nav_retry_count').value
         self.nav_fail_action = self.get_parameter('nav_fail_action').value
+        self.max_rounds = self.get_parameter('max_rounds').value # 最大循环次数
     def get_pose_by_xyyaw(self,x,y,yaw):
         '''
         return PoseStamped
@@ -76,8 +78,13 @@ class PartolNode(BasicNavigator):
         """
         start_time = self.get_clock().now() # 记录开始时间
         timeout = 60.0 # 超时时间
-        self.goToPose(target_pose)
+        if not self.goToPose(target_pose):
+            self.get_logger().warn('导航目标被拒绝')
+            return 'rejected', 0.0
         is_timeout = False # 超时标志位
+        elapsed = 0.0 # 防御性初始化，避免循环零次执行时 UnboundLocalError
+        last_log_time = 0.0 # 日志节流-上次打印时间
+        log_interval = 1.0 # 日志打印间隔(秒)
         while not self.isTaskComplete():
             rclpy.spin_once(self,timeout_sec=0.0) # 有就处理，没有就直接返回，处理积压回调
             # 超时处理
@@ -88,7 +95,9 @@ class PartolNode(BasicNavigator):
                 break
             # 导航中处理反馈
             feedback = self.getFeedback()
-            self.get_logger().info(f'剩余距离：{feedback.distance_remaining}')
+            if feedback is not None and elapsed - last_log_time >= log_interval: # 节流控制，降低日志频率
+                self.get_logger().info(f'剩余距离：{feedback.distance_remaining}')
+                last_log_time = elapsed
         # self.cancelTask()
         # 结果处理-统计信息
         result = self.getResult()
@@ -192,12 +201,20 @@ def main():
     canceled_count = 0 # 取消计数
     failed_count = 0 # 失败计数
     round_count = 0 # 轮数计数
+    total_success = 0 # 全程成功计数
+    total_failed = 0 # 全程失败计数
+    total_timeout = 0 # 全程超时计数
+    total_canceled = 0 # 全程取消计数
 
-    while rclpy.ok():
+    while rclpy.ok() and round_count < partol.max_rounds:
 
         # 轮次计时-开始
         round_start_time = partol.get_clock().now()
         partol_failed = False # 导航失败标志
+        success_count = 0 # 每轮清零
+        timeout_count = 0
+        canceled_count = 0
+        failed_count = 0
         rclpy.spin_once(partol,timeout_sec=0.0) # 有就处理，没有就直接返回
         points = partol.get_target_points()
         round_count += 1 # 轮数计数
@@ -241,7 +258,16 @@ def main():
             f'失败{failed_count}, 超时{timeout_count},'
             f'耗时{round_elapsed_time:.1f}秒'
             )
+        total_success += success_count
+        total_failed += failed_count
+        total_timeout += timeout_count
+        total_canceled += canceled_count
         if partol_failed:
             break
-    rclpy.shutdown()
+    partol.get_logger().info(
+        f'巡逻结束，全程统计：'
+        f'成功{total_success}, 失败{total_failed}, '
+        f'超时{total_timeout}, 取消{total_canceled}'
+    )
     partol.destroy_node()
+    rclpy.shutdown()
