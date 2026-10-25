@@ -86,7 +86,7 @@ class PartolNode(BasicNavigator):
         last_log_time = 0.0 # 日志节流-上次打印时间
         log_interval = 1.0 # 日志打印间隔(秒)
         while not self.isTaskComplete():
-            rclpy.spin_once(self,timeout_sec=0.0) # 有就处理，没有就直接返回，处理积压回调
+            rclpy.spin_once(self,timeout_sec=0.05) # 无回调时阻塞50ms，避免CPU忙等
             # 超时处理
             elapsed = (self.get_clock().now() - start_time).nanoseconds / 1e9 # 转换为秒
             if elapsed > timeout:
@@ -196,15 +196,12 @@ def main():
     partol.init_robot_pose() # 初始化机器人位姿
     partol.speak_text('初始化位置完成')
     # 初始化计数
-    success_count = 0 # 成功计数
-    timeout_count = 0 # 超时计数
-    canceled_count = 0 # 取消计数
-    failed_count = 0 # 失败计数
     round_count = 0 # 轮数计数
     total_success = 0 # 全程成功计数
     total_failed = 0 # 全程失败计数
     total_timeout = 0 # 全程超时计数
     total_canceled = 0 # 全程取消计数
+    total_rejected = 0 # 全程拒绝计数
 
     while rclpy.ok() and round_count < partol.max_rounds:
 
@@ -214,6 +211,7 @@ def main():
         success_count = 0 # 每轮清零
         timeout_count = 0
         canceled_count = 0
+        rejected_count = 0
         failed_count = 0
         rclpy.spin_once(partol,timeout_sec=0.0) # 有就处理，没有就直接返回
         points = partol.get_target_points()
@@ -228,6 +226,9 @@ def main():
                 status, nav_time = partol.nav_to_pose(target_pose)
                 if status == 'succeeded':
                     nav_succeeded = True
+                    break
+                elif status in ('rejected', 'canceled'):
+                    partol.get_logger().warn(f'导航{status}，确定性失败，不重试')
                     break
                 if attempt < partol.nav_retry_count:
                     partol.get_logger().warn(
@@ -247,6 +248,8 @@ def main():
                     timeout_count += 1
                 elif status == 'canceled':
                     canceled_count += 1
+                elif status == 'rejected':
+                    rejected_count += 1
                 if partol.nav_fail_action == 'stop':
                     partol_failed = True
                     break
@@ -255,19 +258,20 @@ def main():
         partol.get_logger().info(
             f'第{round_count}轮完成，'
             f'成功{success_count}/{total_points},'
-            f'失败{failed_count}, 超时{timeout_count},'
+            f'失败{failed_count}, 超时{timeout_count}, 拒绝{rejected_count},'
             f'耗时{round_elapsed_time:.1f}秒'
             )
         total_success += success_count
         total_failed += failed_count
         total_timeout += timeout_count
         total_canceled += canceled_count
+        total_rejected += rejected_count
         if partol_failed:
             break
     partol.get_logger().info(
         f'巡逻结束，全程统计：'
         f'成功{total_success}, 失败{total_failed}, '
-        f'超时{total_timeout}, 取消{total_canceled}'
+        f'超时{total_timeout}, 取消{total_canceled}, 拒绝{total_rejected}'
     )
     partol.destroy_node()
     rclpy.shutdown()

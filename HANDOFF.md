@@ -46,13 +46,21 @@
 - Nav2 参数：`src/pkg03_gazebo_20260814/config/nav2_params.yaml`
 - 巡逻节点：`autopartol_robot` — 8个巡逻点 + 超时机制
 - 联合启动：`autopartol.launch.py`（巡逻+语音+图像）
+- 健壮性修复（2026-10-25）：
+  - `goToPose()` 返回值检查，目标被拒时返回 `'rejected'`，不重试
+  - `elapsed` 防御性初始化，避免 UnboundLocalError
+  - `getFeedback()` 空判断 + 日志节流（1秒间隔）
+  - `rejected`/`canceled` 确定性失败不重试，`rejected` 独立计数
+  - `spin_once` timeout_sec 从 0.0 改为 0.05，避免 CPU 忙等
+  - `max_rounds` 参数支持多轮巡逻 + 全程统计
+  - `gazebo.sh` 新增 `--no-rviz` 参数
 
-> ⚠️ **IMU 状态说明**：当前 IMU（`/imu/data`）仅作为 Gazebo 仿真传感器存在，**未接入 `robot_localization` / EKF 融合链路**。定位仍依赖 AMCL（基于 `/scan` + `/odom`），不属于多传感器融合定位。如需融合，需额外引入 `robot_localization` 节点并配置 EKF/UKF。
+> ⚠️ **IMU 状态说明**：当前 IMU（`/imu`）仅作为 Gazebo 仿真传感器存在，**未接入 `robot_localization` / EKF 融合链路**。定位仍依赖 AMCL（基于 `/scan` + `/odom`），不属于多传感器融合定位。如需融合，需额外引入 `robot_localization` 节点并配置 EKF/UKF。
 
 ### 2.4 rosbag 录制 — `record_30s.sh`（已优化）
 
 - 路径：`src/pkg03_gazebo_20260814/scripts/record_30s.sh`
-- 录制话题：`/scan /tf /tf_static /cmd_vel /odom /plan /amcl_pose /imu/data /clock`（9个）
+- 录制话题：`/scan /tf /tf_static /cmd_vel /odom /plan /amcl_pose /imu /clock`（9个）
 - 特性：
   - 话题就绪检测：录制前等待 /odom /scan /cmd_vel 出现
   - 双模式停止：默认 Ctrl+C / `-w` 模式监听话题消失自动停止

@@ -64,6 +64,10 @@ ros2 run rviz2 rviz2 \
 RVIZ2_PID=$!
 fi
 
-echo "所有服务已启动 (Gazebo=$GAZEBO_PID, Nav2=$NAV2_PID, RViz2=$RVIZ2_PID)"
+if [[ $NO_RVIZ == false ]]; then
+  echo "所有服务已启动 (Gazebo=$GAZEBO_PID, Nav2=$NAV2_PID, RViz2=$RVIZ2_PID)"
+else
+  echo "所有服务已启动 (Gazebo=$GAZEBO_PID, Nav2=$NAV2_PID, RViz2=关闭)"
+fi
 echo "按 Ctrl+C 关闭所有进程"
 wait
