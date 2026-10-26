@@ -11,27 +11,24 @@ def generate_launch_description():
         package="autopartol_robot",
         executable="partol_node",
         name="partol_node",
-        parameters=[default_param_path],
+        parameters=[default_param_path, {'use_sim_time': True}],
         output="screen",
-        use_sim_time=True,   # 开启仿真时间
-        
     )
 
     speaker_node = launch_ros.actions.Node( # 语音节点-子节点，用于语音播报
         package="robot_speech",
         executable="speech_node",
         name="speech_node",
+        parameters=[{'use_sim_time': True}],
         output="screen",
-        use_sim_time=True,   # 开启仿真时间
     )
 
     image_capture_node = launch_ros.actions.Node(# 图片处理节点-子节点
         package="robot_vision",
         executable="image_capture_node",
         name="image_capture_node",
-        parameters=[{'img_save_path': '/home/robot/ros2_ws/patrol_images/'}],
+        parameters=[{'img_save_path': '/home/robot/ros2_ws/patrol_images/'}, {'use_sim_time': True}],
         output="screen",
-        use_sim_time=True,   # 开启仿真时间
     )
 
     return launch.LaunchDescription([
@@ -39,4 +36,3 @@ def generate_launch_description():
         speaker_node,
         image_capture_node,
     ])
-    

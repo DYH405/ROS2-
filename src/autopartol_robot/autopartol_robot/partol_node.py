@@ -86,7 +86,7 @@ class PartolNode(BasicNavigator):
         last_log_time = 0.0 # 日志节流-上次打印时间
         log_interval = 1.0 # 日志打印间隔(秒)
         while not self.isTaskComplete():
-            rclpy.spin_once(self,timeout_sec=0.05) # 无回调时阻塞50ms，避免CPU忙等
+            rclpy.spin_once(self,timeout_sec=0.05) # 有就处理，没有等50ms再返回
             # 超时处理
             elapsed = (self.get_clock().now() - start_time).nanoseconds / 1e9 # 转换为秒
             if elapsed > timeout:
