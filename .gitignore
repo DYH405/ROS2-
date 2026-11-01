@@ -12,3 +12,4 @@ __pycache__/
 *~
 .git_broken_backup
 img_*.png
+experiment_logs/

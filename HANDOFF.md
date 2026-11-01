@@ -44,7 +44,7 @@
 
 - 地图：`src/pkg03_gazebo_20260814/maps/my_map.yaml` + `my_map.pgm`
 - Nav2 参数：`src/pkg03_gazebo_20260814/config/nav2_params.yaml`
-- 巡逻节点：`autopartol_robot` — 8个巡逻点 + 超时机制
+- 巡逻节点：`autopartol_robot` — 10个巡逻点 + 超时机制（`total_goals` 语义 = 巡逻点数量 = 10）
 - 联合启动：`autopartol.launch.py`（巡逻+语音+图像）
 - 健壮性修复（2026-10-25）：
   - `goToPose()` 返回值检查，目标被拒时返回 `'rejected'`，不重试
@@ -287,7 +287,7 @@
 | nav2_params.yaml | `src/pkg03_gazebo_20260814/config/nav2_params.yaml` | Nav2 参数配置 |
 | my_map.yaml | `src/pkg03_gazebo_20260814/maps/my_map.yaml` | 导航地图 |
 | partol_node.py | `src/autopartol_robot/autopartol_robot/partol_node.py` | 巡逻导航节点 |
-| partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 7个巡逻点配置 |
+| partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 10个巡逻点配置 |
 | autopartol.launch.py | `src/autopartol_robot/launch/autopartol.launch.py` | 巡逻联合启动 |
 | .gitignore | `.gitignore` | Git 忽略规则 |
 
@@ -509,5 +509,97 @@
 
 | 文件 | 路径 | 说明 |
 |:---|:---|:---|
-| partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 巡逻点配置 + 重试参数 + use_sim_time |
+| partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 巡逻点配置 + 重试参数 + use_sim_time + CSV 路径 |
 | autopartol.launch.py | `src/autopartol_robot/launch/autopartol.launch.py` | 巡逻联合启动 + use_sim_time 传递 |
+
+---
+
+## 十二、2026-11-01 更新：实验指标落盘 + 初始状态一致性约定
+
+### 12.1 巡逻结果落盘（T-P1-01）
+
+每轮巡逻结束向 `experiment_logs/patrol_runs.csv` 追加一行，**只追加不覆盖**历史；表头仅首次写入；目录不存在时自动创建；写失败只打 warn，不中断巡逻。
+
+CSV 正式表头（**12 列，顺序不可改，后续卡沿用**）：
+
+```
+run_id,start_time,end_time,total_goals,succeeded,failed,timeout,canceled,rejected,total_time_s,max_rounds,note
+```
+
+| 字段 | 语义 |
+|:---|:---|
+| `run_id` | 开始时间戳 + 轮次，如 `20261101_173210_r1` |
+| `start_time` / `end_time` | 墙上时钟 ISO（便于与日志目录对应） |
+| `total_goals` | 本轮目标点总数 = 巡逻点数量 = **10** |
+| `succeeded` | 本轮成功到达的点数 |
+| `failed` | **仅**统计 timeout/canceled/rejected 之外的失败（`failed`/`unknown`） |
+| `timeout` | 重试耗尽后仍超时的点数（独立计数，不并入 failed） |
+| `canceled` | 重试耗尽后仍被取消的点数（独立计数，不并入 failed） |
+| `rejected` | 目标被 Nav2 拒绝的点数（独立计数，不并入 failed；不重试） |
+| `total_time_s` | 本轮耗时（**仿真时钟**，与 console「耗时」同源，实测差 0.0s） |
+| `max_rounds` | 本轮生效的 `max_rounds` 参数值 |
+| `note` | 本轮结束状态，如 `completed` |
+
+### 12.2 验收等式（5 项，含 rejected）
+
+```
+succeeded + failed + timeout + canceled + rejected == total_goals
+```
+
+> ⚠️ 早期文档写的是 4 项（不含 `rejected`）。`rejected` 独立计数后，等式**必须加 `rejected` 项**，否则只要出现目标被拒就不成立。
+>
+> 配合 `nav_fail_action: skip`，每个点必落入上述五个分支之一，等式恒成立。
+
+### 12.3 每次 run 前必须重启 Gazebo（初始状态一致性约定）
+
+**约定**：每次实验 run 前**必须重启 Gazebo**，保证机器人初始位姿一致；不允许"只关巡逻节点、Gazebo 不动"接着跑下一轮。
+
+**原因**：
+
+- `init_robot_pose()` 无条件调用 `setInitialPose(initial_point)`，其中 `initial_point = [0.0, 0.0, 0.0]` → yaw = 0（朝东）
+- 巡逻点表末点为 `[0.0, 0.0, 1.571]` → yaw = 1.571（朝北）
+- 不重启 Gazebo 时，机器人物理位姿保留上一轮终态（yaw ≈ 1.571），而 AMCL 被告知 yaw = 0 → **偏差约 90°**
+
+**现象**：AMCL 粒子云按错误的初始假设撒开，与地图匹配失败 → 粒子发散 → RViz 中定位四处漂移 → 随机器人移动、观测累积逐步收敛，雷达边界才与地图边缘重合。漂移期间导航不可信。
+
+**处置（方案 A）**：每次 run 前重启 Gazebo，机器人回到 yaw = 0，与 `initial_point` 一致，不触发漂移。
+
+**落地方向**：T-P1-02 批量脚本中，每次 run 前重启 Gazebo 作为固定步骤，不依赖人工。
+
+### 12.4 AMCL 漂移实测证据（2026-11-01 采集）
+
+采集方式：`ros2 topic echo /amcl_pose` 整轮记录，取首/末帧；yaw 由四元数 `2*atan2(z,w)` 换算。
+
+| 场景 | init 位姿（AMCL 实测） | 末点位姿 / yaw（AMCL 实测） | 与 `initial_point (0,0,0)` 偏差 |
+|:---|:---|:---|:---|
+| 重启 Gazebo 后第一轮 | `(0.00001, -0.000002)`, yaw ≈ **-0.004°** | `(0.0337, -0.1402)`, yaw ≈ **108.43°** | 起点 ≈ 0，与 initial_point 一致 ✅ |
+| 不重启，紧接着第二轮 | 首帧 = 上轮末帧 `(0.0337, -0.1402)`, yaw **108.43°**；随后新发布帧 yaw **98.57°** → **85.18°** | `(0.0757, -0.1241)`, yaw ≈ **106.34°** | 位置偏差 **0.144 m**，yaw 偏差 **约 85°~108°**（预期约 90°，吻合）❌ |
+| 重启后第二轮（方案 A 验证） | `(0.00001, -0.000003)`, yaw ≈ **-0.004°** | `(0.0103, -0.1601)`, yaw ≈ **106.79°** | 与第一轮 init 差 **< 1e-6 m / < 0.001°**（远优于 0.05m / 2°）✅ |
+
+**结论**：
+
+1. 不重启 Gazebo 时，第二轮 init 位姿与上一轮末帧**完全相同**（逐位一致），且随后新发布的 AMCL 帧 yaw 从 108.43° 起算（98.57° → 85.18°），**并未回到 0°** → 证明 `setInitialPose(0,0,0)` 未能重置 AMCL，其粒子滤波状态跨 run 延续。**漂移根因确认。**
+2. 重启 Gazebo 后，init 位姿回到 `(0,0,0)`、yaw≈0°，与第一轮差异 < 1e-6 m / < 0.001° → **方案 A 有效。**
+3. 补充观测（记录不修）：三次 run 的**末点** yaw 均为 106°~108°，而末点指令为 `1.571 rad = 90°`，存在 **约 17°~18° 的系统性末点朝向偏差**。可能来源：`yaw_goal_tolerance`（Nav2 默认 0.25 rad ≈ 14°）+ AMCL 末次发布滞后（AMCL 仅在运动时发布，末次消息可能早于最终位姿稳定）。本卡未采集 TF 真值（`tf2_echo` 未执行），故不下定论，列入后续核查项。
+
+**采集局限**：本次未采集 `tf2_echo map base_footprint` 物理真值，末点位姿均来自 `/amcl_pose`（AMCL 估计值）。另外 `/amcl_pose` 的 QoS 为 transient_local，新订阅者会先收到上一轮最后一条消息，故「第二轮首帧」不一定是新发布——本结论依据的是**随后新发布帧的 yaw 走向**，而非首帧。
+
+### 12.5 巡逻点数量唯一结论
+
+**当前实际巡逻点数量 = 10**，`total_goals` 语义 = 10。
+
+三处历史数字差异来源：
+
+| 出处 | 数字 | 来源说明 |
+|:---|:---:|:---|
+| 交接文档 2.3 节（旧） | 8个 | 2026-10-20「删除原点巡逻点」**之前**的旧值 |
+| 交接文档 六、索引（旧） | 7个 | 删除原点巡逻点**之后**的旧值 |
+| T-P1-01 回传 | 9点 | 2026-11-01 新增「回到原点朝北」「-4,-2 朝南」两点后的值 |
+
+**当前 10 点的来源**：在 9 点基础上，于「第8点 `4.0,-3.0,-2.356`」与「第9点 `0.0,0.0,1.571`」之间新增过渡点 `2.0,-3.0,3.1416`（yaw = 初始角 0° + 180°）。
+
+**核对依据**：`partol_config.yaml` 实有 10 组 `[x,y,yaw]`；`autopartol.launch.py` **不覆盖、不追加** `target_point`（仅传参文件路径）；全仓仅此一个 `partol_config.yaml`。
+
+### 12.6 遗留目录处置
+
+`baseline_results/`（2026-10-23 生成，9 个空 bag + 1 行全 0 CSV + 半成品脚本）已归档至 `archive/baseline_results_20261023/`，**不删除**，保留作 T-P1-02 批量脚本的目录结构参考。

@@ -10,8 +10,11 @@
                   -4.0,-2.0,-1.571,
                   4.0,-1.0,-0.785,
                   4.0,-3.0,-2.356,
+                  2.0,-3.0,3.1416,
                   0.0,0.0,1.571]
     use_sim_time: true    
     max_rounds: 1 # 最大循环次数
     nav_retry_count: 2 # 导航重试次数
-    nav_fail_action: stop # skip:跳过失败点继续,stop:失败即停止(调试用)
+    nav_fail_action: skip # skip:跳过失败点继续,stop:失败即停止(调试用)
+    # 注意:每次实验run前必须重启Gazebo,保证初始位姿一致;不重启会导致第二轮起AMCL初始化位姿与上一轮末点yaw不一致(偏差约90°)
+    csv_log_path: '~/ros2_ws/experiment_logs/patrol_runs.csv' # 实验指标CSV路径

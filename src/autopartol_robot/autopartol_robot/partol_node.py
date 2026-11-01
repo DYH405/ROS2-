@@ -6,6 +6,9 @@ from tf2_ros import TransformListener,Buffer  # 坐标监听器
 from tf_transformations import euler_from_quaternion,quaternion_from_euler 
 from autopartol_interfaces.srv import SpeechText
 from autopartol_interfaces.srv import CaptureImage
+import csv # 实验指标落盘
+from datetime import datetime
+from pathlib import Path
 
 
 
@@ -30,9 +33,32 @@ class PartolNode(BasicNavigator):
         self.declare_parameter('nav_retry_count', 2) # 导航重试次数
         self.declare_parameter('nav_fail_action', 'skip') # skip:跳过,stop:停止
         self.declare_parameter('max_rounds', 3) # 最大循环次数
+        self.declare_parameter('csv_log_path', '~/ros2_ws/experiment_logs/patrol_runs.csv') # 实验指标CSV路径
         self.nav_retry_count = self.get_parameter('nav_retry_count').value
         self.nav_fail_action = self.get_parameter('nav_fail_action').value
         self.max_rounds = self.get_parameter('max_rounds').value # 最大循环次数
+        self.csv_log_path = self.get_parameter('csv_log_path').value # 实验指标CSV路径
+    def append_run_record(self, record):
+        """
+        record: dict
+        向CSV追加一轮巡逻指标，文件不存在则先写表头
+        写失败只warn，不影响巡逻主流程
+        """
+        header = ['run_id','start_time','end_time','total_goals',
+                  'succeeded','failed','timeout','canceled','rejected',
+                  'total_time_s','max_rounds','note']
+        try:
+            path = Path(self.csv_log_path).expanduser() # 展开~为绝对路径
+            path.parent.mkdir(parents=True, exist_ok=True) # 目录不存在则防御性创建
+            write_header = not path.exists() or path.stat().st_size == 0
+            with open(path, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(header)
+                writer.writerow([record.get(key, '') for key in header])
+            self.get_logger().info(f'实验指标已写入：{path}')
+        except Exception as e:
+            self.get_logger().warn(f'实验指标写入失败：{str(e)}')
     def get_pose_by_xyyaw(self,x,y,yaw):
         '''
         return PoseStamped
@@ -207,6 +233,7 @@ def main():
 
         # 轮次计时-开始
         round_start_time = partol.get_clock().now()
+        round_start_wall = datetime.now() # 墙上时钟-用于CSV起止时间与run_id
         partol_failed = False # 导航失败标志
         success_count = 0 # 每轮清零
         timeout_count = 0
@@ -243,13 +270,14 @@ def main():
                 if pose_result is None:
                     partol.get_logger().warn(f'目标点{x},{y},{yaw}位姿获取失败，跳过记录')
             else:
-                failed_count += 1
                 if status == 'timeout':
                     timeout_count += 1
                 elif status == 'canceled':
                     canceled_count += 1
                 elif status == 'rejected':
                     rejected_count += 1
+                else:
+                    failed_count += 1 # 仅统计timeout/canceled/rejected之外的失败
                 if partol.nav_fail_action == 'stop':
                     partol_failed = True
                     break
@@ -266,6 +294,20 @@ def main():
         total_timeout += timeout_count
         total_canceled += canceled_count
         total_rejected += rejected_count
+        partol.append_run_record({
+            'run_id': f'{round_start_wall.strftime("%Y%m%d_%H%M%S")}_r{round_count}',
+            'start_time': round_start_wall.strftime('%Y-%m-%dT%H:%M:%S'),
+            'end_time': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+            'total_goals': total_points,
+            'succeeded': success_count,
+            'failed': failed_count,
+            'timeout': timeout_count,
+            'canceled': canceled_count,
+            'rejected': rejected_count,
+            'total_time_s': round(round_elapsed_time, 1),
+            'max_rounds': partol.max_rounds,
+            'note': 'stopped_on_failure' if partol_failed else 'completed',
+        })
         if partol_failed:
             break
     partol.get_logger().info(
