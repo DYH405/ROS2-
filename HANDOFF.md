@@ -289,6 +289,10 @@
 | partol_node.py | `src/autopartol_robot/autopartol_robot/partol_node.py` | 巡逻导航节点 |
 | partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 10个巡逻点配置 |
 | autopartol.launch.py | `src/autopartol_robot/launch/autopartol.launch.py` | 巡逻联合启动 |
+| patrol_runs.csv | `experiment_logs/patrol_runs.csv` | 巡逻实验指标落盘（12 列，T-P1-01 产出） |
+| patrol_runs_v1_11cols_backup.csv | `experiment_logs/patrol_runs_v1_11cols_backup.csv` | 11 列表头历史备份（T-P1-01-FIX 处置留存） |
+| archive/baseline_results_20261023 | `archive/baseline_results_20261023/` | 旧基线目录归档（未纳入 Git，见 12.8 遗留风险） |
+| BUGLOG.md | `BUGLOG.md` | 问题记录（现象/根因/处置/教训） |
 | .gitignore | `.gitignore` | Git 忽略规则 |
 
 ---
@@ -310,8 +314,10 @@
 ## 八、Git 状态
 
 - 分支：master
-- 远端：`https://github.com/DYH405/ROS2-.git`
-- 提交数：5
+- 远端：`https://github.com/DYH405/ROS2-.git`（`git remote -v` 回读显示 URL 字面含反引号，见 BUGLOG 2026-11-04 条目）
+- 当前 HEAD：`4cf679e`（feat: 巡逻实验指标落盘与AMCL漂移收口）
+- VM 内 origin/master：`f44c7ac`（本地缓存的远端跟踪引用，**未随主机侧推送更新**，见 12.9）
+- 提交数：**21**（2026-11-04 `git rev-list --count HEAD` 实测）；旧记录「5」为 2026-10-22 重建时的口径，已过旧
 - 旧 .git 备份：`.git_broken_backup/`（已在 .gitignore 中排除）
 
 ---
@@ -603,3 +609,60 @@ succeeded + failed + timeout + canceled + rejected == total_goals
 ### 12.6 遗留目录处置
 
 `baseline_results/`（2026-10-23 生成，9 个空 bag + 1 行全 0 CSV + 半成品脚本）已归档至 `archive/baseline_results_20261023/`，**不删除**，保留作 T-P1-02 批量脚本的目录结构参考。
+
+### 12.7 T-P1-01 巡逻结果落盘：产出与 12 列表头来源（2026-11-04 补更）
+
+| 项 | 结论 |
+|:---|:---|
+| 卡号 | T-P1-01（2026-11-01 完成） |
+| 代码落点 | `partol_node.py` 的 `append_run_record()` |
+| 参数名 | `csv_log_path`，默认 `~/ros2_ws/experiment_logs/patrol_runs.csv` |
+| 产出文件 | `experiment_logs/patrol_runs.csv` |
+| 写入时机 | 每轮巡逻结束（`while` 循环内、失败 `break` 之前） |
+| 写失败行为 | 仅 `warn`，不中断巡逻主流程 |
+| 表头 | 12 列，字段语义以 **12.1 节为准**，本节不重复表头 |
+
+**12 列表头来源**：原 11 列 + `rejected` 插入第 9 位（`canceled` 之后）→ 12 列。字段顺序在代码 `header` 列表与 12.1 节文本中同源，**后续增删字段必须两处同步**。
+
+**实际数据（2026-11-04 只读核对）**：表头 12 列正确；数据 6 个物理行，其中第 4 行粘连 2 条 run（见 12.8 遗留风险 2），实为 **7 条 run 记录**；`total_goals=9` 4 条（9 点旧口径）、`=10` 3 条（10 点现行口径）。
+
+### 12.8 T-P1-01-FIX 收口结论索引（2026-11-04 补更）
+
+| 项 | 结论 |
+|:---|:---|
+| 卡号 | T-P1-01-FIX |
+| 问题 | 表头 11→12 列未同步，新数据行整体右移一列，`total_time_s` 读成 0、`max_rounds` 读成 252.5 |
+| 处置 | 原文件备份 → 主文件重写为 12 列 → 历史 2 行补 `rejected=0` → 第 3 行（本就 12 列）原样保留 |
+| 备份文件 | `experiment_logs/patrol_runs_v1_11cols_backup.csv` |
+| 遗留风险 1 | 写表头条件仅判「文件不存在或大小为 0」，**不校验列数** → 再次增删字段会静默重演错列且无告警 |
+| 遗留风险 2 | 数据文件第 4 行行尾缺换行，`completed` 与下一条 `run_id` 粘连成一行（2026-11-04 只读核对发现）；**本卡不修**，列入另开卡 |
+| 详情 | `BUGLOG.md`「2026-11-01 CSV 表头 11→12 列未同步导致列错位」 |
+
+### 12.9 T-P1-01-PUSH 提交与推送方式（2026-11-04 补更）
+
+| 项 | 值 |
+|:---|:---|
+| 卡号 | T-P1-01-PUSH |
+| 提交 hash | `4cf679e` |
+| 提交信息 | `feat: 巡逻实验指标落盘与AMCL漂移收口` |
+| 分支 | `master` |
+| 远端 | `origin` |
+| 推送执行位置 | **主机共享文件夹**（虚拟机内 `git push` 异常，未在 VM 内完成） |
+| VM 内 `origin/master` | `f44c7ac`（本地缓存的远端跟踪引用，**不代表 GitHub 实际状态**） |
+| 待确认 | GitHub 上是否已存在 `4cf679e`；需在 VM 执行 `git fetch origin` 后核对 `origin/master` |
+
+**推送异常的根因与处置**详见 `BUGLOG.md`「2026-11-04 虚拟机内 git push 异常 → 主机共享文件夹推送」。
+
+### 12.10 文档同步约定（2026-11-04 新增，长期有效）
+
+**硬要求**：
+
+1. **同卡更新**：每张任务卡完成后，在**同一张卡内**更新文档，不分卡补、不攒批补、不留到下一卡。
+2. **回传必须列位置**：回传需写明文档更新位置（文件 + 章节号）；**无文档影响时必须写明理由**，不得省略。
+
+**配套要求**：
+
+3. **文档更新是卡内必做项**：与代码改动同等对待，不是"有空再写"。
+4. **缺口只列不扩**：发现历史缺口先列清单交评审决策，不自行扩写范围（本卡 P0 缺口即按此处理）。
+5. **禁止伪造**：只写已发生事实与证据位置；未采集数据留「待确认」，不估算填充、不写"测试全过"式自述。
+6. **只写结论**：文档写结论、决策、证据位置，不贴完整代码、完整日志、整篇文件。

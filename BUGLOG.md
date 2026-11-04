@@ -257,3 +257,30 @@ succeeded + failed + timeout + canceled + rejected == total_goals
 **影响**：巡逻点总数 9 → 10，`total_goals` 语义同步改为 10，验收等式右侧由 9 改为 10。
 
 **注意**：yaw = 3.1416 恰好位于 [-π, π] 边界。HANDOFF 10.2.2 曾记录"yaw 超出 [-π,π] 导致粒子发散"，3.1416 未超出，但若后续观察到该点附近定位异常，可改用 `-3.1416`（等价朝向）。
+
+---
+
+## 2026-11-04 虚拟机内 git push 异常 → 主机共享文件夹推送
+
+**现象**：在虚拟机 `~/ros2_ws` 执行 `git push` 失败，提交无法上传远端；改在主机（共享文件夹路径）执行推送后成功。本卡 T-P1-01-PUSH 的提交即由主机侧完成。
+
+**证据**（2026-11-04 只读采集）：
+
+```
+origin  `https://github.com/DYH405/ROS2-.git` (fetch)
+origin  `https://github.com/DYH405/ROS2-.git` (push)
+```
+
+- 远端 URL **字面含反引号**，与 HANDOFF「坑11：Git 远端 URL 反引号」同类
+- VM 内 HEAD = `4cf679e`，VM 内 `origin/master` = `f44c7ac`（**落后 1 条**，因推送在主机侧执行，VM 的远端跟踪引用未更新）
+
+**根因**（推断，待验证）：remote URL 中残留反引号，git 将反引号视为 URL 的一部分 → 连接/认证失败。坑11 的 `git remote set-url origin "https://..."` 用的是**双引号**，而双引号不转义反引号，故若原字符串已含反引号则修不掉。
+
+**处置**：本卡只写文档，**不修 remote**（改配置需另开卡）。推送改由主机共享文件夹执行；VM 内推送能力待修复，修复前每次提交后需在主机侧推送。
+
+**教训**：
+
+1. 设置 URL 用**单引号** `git remote set-url origin 'https://...'`，或直接 `git config --edit` 手改；设置后**必须 `git remote -v` 回读确认无反引号**。
+2. 双引号防不住反引号，坑11 的教训记录不完整。
+3. VM 与主机共享同一仓库时，两边 remote 配置与 remote-tracking 引用需**分别核对**；一处推送不代表另一处状态同步。
+4. `git status` 不显示「ahead」不等于已推送——本环境中 VM 侧引用长期滞后，**"推送成功"必须以主机侧或 `git fetch` 后回读为准**。
