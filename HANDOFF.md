@@ -1,7 +1,7 @@
 # ROS2 仿真导航项目 — 交接文档
 
-> 更新时间：2026-10-22
-> 当前阶段：第一阶段（理想仿真基线）— 打磨中
+> 更新时间：2026-11-07
+> 当前阶段：P1 收尾 / 路线切换
 
 ---
 
@@ -229,6 +229,8 @@
 
 > 课题核心：**面向室内巡检任务的ROS2移动机器人故障检测与分级恢复，并通过不确定性仿真和回归实验进行验证。**
 
+> ⚠️ 原五阶段规划已降级，归档见 `docs/archive/ROADMAP_FAULT_DETECTION_ARCHIVE.md`，当前主线见路线图 v2.0。
+
 ### 第一阶段：建立可复现的仿真基线
 
 - 固定：同一地图、起点、目标点、导航参数
@@ -291,6 +293,9 @@
 | autopartol.launch.py | `src/autopartol_robot/launch/autopartol.launch.py` | 巡逻联合启动 |
 | patrol_runs.csv | `experiment_logs/patrol_runs.csv` | 巡逻实验指标落盘（12 列，T-P1-01 产出） |
 | patrol_runs_v1_11cols_backup.csv | `experiment_logs/patrol_runs_v1_11cols_backup.csv` | 11 列表头历史备份（T-P1-01-FIX 处置留存） |
+| run_one_experiment.sh | `scripts/run_one_experiment.sh` | 单次端到端实验脚本（重启→就绪→巡逻→落盘→真值→关闭，T-P1-02A 产出） |
+| capture_truth_pose.py | `scripts/capture_truth_pose.py` | 末点真值 + AMCL 末点采集（`--watch` / `--finalize`，T-P1-02A 产出） |
+| truth_last_pose.csv | `experiment_logs/truth_last_pose.csv` | 末点真值旁路文件（7 列，运行时生成） |
 | archive/baseline_results_20261023 | `archive/baseline_results_20261023/` | 旧基线目录归档（未纳入 Git，见 12.8 遗留风险） |
 | BUGLOG.md | `BUGLOG.md` | 问题记录（现象/根因/处置/教训） |
 | .gitignore | `.gitignore` | Git 忽略规则 |
@@ -635,7 +640,7 @@ succeeded + failed + timeout + canceled + rejected == total_goals
 | 处置 | 原文件备份 → 主文件重写为 12 列 → 历史 2 行补 `rejected=0` → 第 3 行（本就 12 列）原样保留 |
 | 备份文件 | `experiment_logs/patrol_runs_v1_11cols_backup.csv` |
 | 遗留风险 1 | 写表头条件仅判「文件不存在或大小为 0」，**不校验列数** → 再次增删字段会静默重演错列且无告警 |
-| 遗留风险 2 | 数据文件第 4 行行尾缺换行，`completed` 与下一条 `run_id` 粘连成一行（2026-11-04 只读核对发现）；**本卡不修**，列入另开卡 |
+| 遗留风险 2 | 数据文件第 4 行行尾缺换行，`completed` 与下一条 `run_id` 粘连成一行（2026-11-04 只读核对发现）；**已在 T-P1-02A 修复**（备份 `patrol_runs_pre_tp102a_backup.csv`，拆行后 7→8 行，`all12=True`） |
 | 详情 | `BUGLOG.md`「2026-11-01 CSV 表头 11→12 列未同步导致列错位」 |
 
 ### 12.9 T-P1-01-PUSH 提交与推送方式（2026-11-04 补更）
@@ -666,3 +671,108 @@ succeeded + failed + timeout + canceled + rejected == total_goals
 4. **缺口只列不扩**：发现历史缺口先列清单交评审决策，不自行扩写范围（本卡 P0 缺口即按此处理）。
 5. **禁止伪造**：只写已发生事实与证据位置；未采集数据留「待确认」，不估算填充、不写"测试全过"式自述。
 6. **只写结论**：文档写结论、决策、证据位置，不贴完整代码、完整日志、整篇文件。
+
+### 12.11 T-P1-02A 单次端到端实验脚本与真值末点（2026-11-05）
+
+**脚本**：`scripts/run_one_experiment.sh`，一条命令完成 重启 Gazebo → 等就绪 → 跑一轮 → 落 CSV → 采真值末点 → 关仿真。
+
+```bash
+cd ~/ros2_ws && ./scripts/run_one_experiment.sh
+# 可选环境变量覆盖：READY_TIMEOUT(默认60) / ACTION_TIMEOUT(120) / PATROL_TIMEOUT(900) / READY_TOPICS
+```
+
+| 步骤 | 动作 | 失败退出码 |
+|:---|:---|:---:|
+| S1 | 清理残留（`nav2_bringup`/`nav2_container`/`gzserver`/`gzclient` + `/dev/shm/gz*`、`/dev/shm/rmw*`） | — |
+| S2 | 起 `gazebo_test.launch.py` + `nav2_bringup`（`my_map.yaml` + `nav2_params_hybrid.yaml`） | 2 |
+| S3 | 等 `/scan` `/odom` `/cmd_vel` + action `navigate_to_pose` | 4 |
+| S4 | 起 `capture_truth_pose.py --watch`（先于巡逻，缓存 `/amcl_pose`）→ 起 `autopartol.launch.py` | 5 |
+| S5 | 轮询 CSV 行数 +1 判定本轮完成 | 6 |
+| S6 | `capture_truth_pose.py --finalize` 采真值 + AMCL 末点 | 7 |
+| S7 | `trap` 清理并退出 | 0 |
+
+失败日志：`experiment_logs/run_one_<时间戳>/fail.log`，格式 `[FAIL] step=S3 reason=topic_missing:/xxx exit=4`。
+
+**真值来源**：`/gazebo/model_states`（`gazebo_msgs/ModelStates`），按 `name[]` 查 `basic_diff_drive_robot` 下标取同下标 `pose[]`，`yaw = 2*atan2(q.z, q.w)`。
+
+- **前置条件**：`robocup_home.world` 的 `<world>` 内声明 `<plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">`，并设 `<namespace>/gazebo</namespace>` + `<update_rate>30.0</update_rate>`（本卡 +6 行）。
+- **该插件是 `WorldPlugin`，只能写在 world SDF 内，不能用 `gzserver -s` 加载**（`-s` 会报 `incorrect plugin type`，见 BUGLOG 2026-11-05 条目）。
+- **`namespace` 决定话题名**：插件源码内是相对名 `model_states`；设 `/gazebo` 后即 `/gazebo/model_states`，不设则为 `/model_states`。采集脚本**两条都订阅**，避免命名假设失效。
+- 坐标可直接对齐：spawn 点 `(0,0)` 即建图 `map` 原点。
+- **副作用**：`gazebo.sh` / `slam.sh` 共用同一 world，启动后同样会多发布 `/gazebo/model_states`、`/gazebo/link_states` 及 4 个 entity_state service；无行为改变。
+
+**AMCL 末点采集方式（决策 2-A）**：脚本在巡逻启动**前**即以 `--watch` 常驻订阅 `/amcl_pose`，每秒原子写 `pose_cache.json`；`--finalize` 时读取缓存。
+
+> 原因：`/amcl_pose` 为 volatile QoS 且 AMCL 在静止后不再重算（受 `update_min_d`/`update_min_a` 抑制），**巡逻结束后才订阅会永久挂死**。
+
+**存储（决策 1：旁路文件，主表零变更）**：`experiment_logs/truth_last_pose.csv`，7 列 `run_id,gt_x,gt_y,gt_yaw,amcl_x,amcl_y,amcl_yaw`；`run_id` 取主表最后一条，保证同轮对齐。**`patrol_runs.csv` 12 列表头不变**，旧行完全兼容。
+
+**用途**：定性 12.4 记录的末点 yaw 17~18° 偏差——真值≈90° 而 AMCL≈106° ⇒ AMCL 估计问题；两者均≈106° ⇒ 机器人确实未转到位（`yaw_goal_tolerance`=0.25rad≈14°）；真值≈106° 而 AMCL≈90° ⇒ AMCL 与真值脱节。
+
+**实测对照（2026-11-05 共 4 轮，真值 vs AMCL，位置单位 m / 角度单位 rad）**
+
+| run_id | 成功/总 | 耗时 s | 真值末点 | AMCL 末点 | 位置差 | 有效性 |
+|:---|:---:|:---:|:---|:---|:---:|:---|
+| 20261105_153829_r1 | 10/10 | 225.1 | (-0.007,-0.16,1.73) | (0.037,-0.139,1.885) | 0.05 | **valid** |
+| 20261105_154240_r1 | 8/10 | 392.6 | (3.875,-1.373,-4.845→归一化1.438) | (1.818,-2.335,-2.872) | 2.27 | **invalid** |
+| 20261105_165259_r1 | 10/10 | 227.7 | (0.018,-0.14,1.702) | (0.055,-0.131,1.892) | 0.038 | **valid** |
+| 20261105_220630_r1 | 7/10 | 566.5 | (-3.281,3.181,-0.34) | (1.95,-1.692,-0.371) | 7.15 | **invalid** |
+
+**run1 结论（12.4 的 17~18° 偏差首次拆分）**
+
+- 指令 yaw 90.0°；真值 99.1°（+9.1°，0.159 rad）；AMCL 108.0°（+18.0°，0.314 rad）
+- 机器人确实只转到 99.1°，且 0.159 rad < `yaw_goal_tolerance` 0.25 rad ⇒ Nav2 合法判定到达，解释了为何系统性停在 90°~104° 区间
+- AMCL 在此之上又多估约 8.9° ⇒ **偏差两源各半**
+- 位置差仅 0.05 m ⇒ `map` 与 world 帧基本对齐，排除坐标系帧偏差
+
+**run2 标 invalid 的原因（单 run 内 AMCL 发散，非重启失败、非坐标系问题）**
+
+- wp0~wp6 各到达点与指令点偏差 ≤0.16 m，轨迹正常
+- wp6→wp7 途中 1 秒内 `剩余距离` 由 0.337 反跳到 1.816（**+1.48 m 定位跳变**）
+- `nav2.log` 两次报 `Starting point in lethal space!` ⇒ AMCL 将机器人估入障碍格，规划器拒绝出解
+- wp7(4,-3,-2.356) 与 wp9(0,0,1.571) 各重试 2 次后耗尽 ⇒ 成功数 8/10
+- 末点真值↔AMCL 差 2.27 m ⇒ 该轮末点不可用于 yaw 统计
+- **待办**：AMCL 发散排查另开卡，本卡不改 AMCL 参数
+
+**run3（165259）结论**：10/10、227.7s，真值 97.5° / AMCL 108.4°（差 10.9°），位置差 0.038 m ⇒ 与 run1 一致，**AMCL 系统性多估 9~11°** 得到第二例佐证，末点有效。
+
+**run4（220630）标 invalid 的原因——单 run 内 AMCL 发散，本次可复现**
+
+- 成功 7/10、耗时 566.5s；末点真值↔AMCL 差 **7.15 m**
+- `pose_trace.csv` 逐秒采样（590 行，t=1~590s）给出偏差曲线：
+
+| t (s) | 真值 | AMCL | \|差\| |
+|:---:|:---|:---|:---:|
+| 31 | (3.39, 2.00) | (3.26, 1.86) | 0.19 |
+| 91 | (-4.10, 2.99) | (-4.07, 2.91) | 0.08 |
+| 211 | (0.04,-1.40) | (-0.17,-1.30) | 0.23 |
+| 236 | (4.21,-3.25) | (3.68,-3.04) | 0.58 |
+| 261 | (4.42,-3.39) | (2.28,-2.28) | 2.41 |
+| **341** | (4.17,-3.10) | **(-3.82, 2.86)** | **9.97** |
+| 421 | (-2.57, 3.67) | (2.33,-2.27) | 7.69 |
+| 571 | (-3.36, 3.13) | (2.53,-1.54) | 7.52 |
+
+- **关键事件**：t=340s 单步（1 s 内）AMCL 由 `(3.839,-3.022)` 跳到 `(-3.817,2.860)`，位移 **9.97 m**；此后 250 s 内**未回正**，偏差持续 3~8 m
+- 全轮 587 个有效采样中 **325 个（55%）\|差\|>1 m** ⇒ 不是短暂抖动，是**持续性定位错误**
+- 跳变点相对真值近似**点对称**（真值 x≈4.1、y≈-3.1 → AMCL x≈-3.8、y≈+2.9），指向地图对称/激光特征退化导致的**全局重定位错解**（属假设，需另卡验证）
+- `nav2.log` 报 `Starting point in lethal space!` ⇒ AMCL 把机器人估进障碍格，规划器拒绝出解 ⇒ 3 个点重试耗尽
+- **措辞说明**：本轮**本次可复现**（154240 与 220630 两轮均出现 >1 m 的定位跳变），非"偶发"；因仅 2 次样本，发生概率需 T-P1-02B 批量观察
+- **待办**：AMCL 发散排查另开卡，本卡不改 AMCL 参数（`min_particles`、`alpha1~4` 等一律不动）
+
+**yaw 归一化**：`yaw_from_quat()` 增加 `atan2(sin,cos)` 归一化到 [-π,π]（+2 行）。四元数双覆盖（`q` 与 `-q` 等价）使原始公式可落在 (-2π,2π]，run2 曾输出 -4.845（等价 1.438），与 AMCL 不可比；归一化后同帧可比。
+
+**采样轨迹**：`--watch` 每次采样除写 `pose_cache.json` 外，另追加一行到同目录 `pose_trace.csv`（7 列 `t_sec,gt_x,gt_y,gt_yaw,amcl_x,amcl_y,amcl_yaw`），用于偏差随时间曲线分析。**不改 `run_one_experiment.sh`**，路径由 `--json` 自动派生。
+
+**world 改动登记（必须留档，否则基线不可复现）**：`robocup_home.world` 的 `<world>` 开头新增 `gazebo_ros_state` 插件块（+6 行），并修复文件末尾换行符。**物理参数、模型、光照、地图几何、`<gui>` 均未改动**；唯一影响是启动后多发布 `/gazebo/model_states`、`/gazebo/link_states` 及 4 个 entity_state service。该 world 被 `gazebo.sh`、`slam.sh`、`run_one_experiment.sh` 共用，故三者均受此影响。
+
+**踩坑**：
+
+1. `gazebo_test.launch.py` 未声明 `headless` 参数，但 `gazebo.sh` 传入 `headless:=true`，属历史遗留，本卡不改。
+2. 末点采集**必须在关 Gazebo 之前**（S6 在 S7 前），否则话题消失、真值永久丢失。
+3. 就绪等待失败属 S3，**此时巡逻尚未启动，不产生任何 CSV 行**，故用它做失败注入（`READY_TOPICS="/scan /nonexistent_topic"` + `READY_TIMEOUT=5`）零数据污染。
+4. 判定"本轮完成"用 **CSV 行数 +1**，不用 `ros2 launch` 进程退出——`autopartol.launch.py` 含 speech/vision 两个常驻节点，launch 进程不会随巡逻结束退出。
+5. **`install/` 是普通拷贝，不是软链**：改 `src/` 后必须 `colcon build` 才生效，否则运行的仍是旧副本（表现为"改了代码但行为没变"）。脚本 S2 已加硬校验：检查 install 内 world 是否含 `gazebo_ros_state`、`partol_node.py` 是否含 `need_nl`，缺失即 `exit 2` 报 `install_stale`。
+6. **`set -u` 与 ROS `setup.bash` 冲突**：`install/setup.bash` L11 裸引用 `$COLCON_TRACE`，在 `set -u` 下触发 unbound variable 并**直接终止脚本**（表现为此前所有 run 都 `EXIT=1` 且停在 S2 之前）。脚本已用 `set +u` / `set -u` 包裹 source。
+7. **`gazebo_ros_state` 是 `WorldPlugin`**，`gzserver -s libgazebo_ros_state.so` 会被 Gazebo 拒绝（`incorrect plugin type`）且**不报错退出**，只在日志留 `[Err]`；必须写进 world SDF。
+
+**CSV 换行守卫**：`append_run_record()` 写前用 `rb` 读末字节，非 `\n` 则先补 `\r\n`；`write_header` 判据改为 `has_content`。**12 列表头、`rejected` 独立、5 项等式、异常只 `warn` 均未改动**。
