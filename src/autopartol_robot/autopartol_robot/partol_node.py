@@ -50,9 +50,17 @@ class PartolNode(BasicNavigator):
         try:
             path = Path(self.csv_log_path).expanduser() # 展开~为绝对路径
             path.parent.mkdir(parents=True, exist_ok=True) # 目录不存在则防御性创建
-            write_header = not path.exists() or path.stat().st_size == 0
+            has_content = path.exists() and path.stat().st_size > 0 # 文件是否已有内容
+            need_nl = False # 末行是否缺行尾（人工编辑后可能出现）
+            if has_content:
+                with open(path, 'rb') as fb:
+                    fb.seek(-1, 2)
+                    need_nl = fb.read(1) != b'\n' # 末字节非\n则需补行尾
+            write_header = not has_content
             with open(path, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
+                if need_nl:
+                    f.write('\r\n') # 补行尾，避免与上一条run粘连
                 if write_header:
                     writer.writerow(header)
                 writer.writerow([record.get(key, '') for key in header])
