@@ -1,0 +1,124 @@
+# =============================================================================
+# M3 EKF 融合配置（robot_localization 的 ekf_node）
+#
+# 输入：/odom（轮式里程计，只取速度）
+#       /imu （IMU，只取绝对航向与角速度）
+# 输出：/odometry/filtered，并发布 odom -> base_footprint 的 TF
+#
+# 配置思路：里程计的位置靠积分、越跑越漂，但速度是轮子直接测的、瞬时可信；
+#           IMU 的航向是相对世界系的绝对量、不漂，但位置/速度靠加速度积分、更漂。
+#           各取所长，这是 M3 要验证的核心论点。
+#
+# 两条成对约束，漏一边会静默失效或直接冲突：
+#   1) publish_tf: true 必须与 xacro 的 publish_odom_tf:=false 成对出现。
+#      只改一边 = 差速插件和 EKF 抢同一条 TF 边，RViz 里车身来回抽。
+#   2) imu0_differential 必须为 false。写成 true 不报错，但 IMU 会退化成
+#      第二个会漂的陀螺仪，M3 的核心论点直接作废。
+#
+# 待验证项见 BUGLOG 2026-11-08 条目，首次实跑时逐条查验后再调参。
+# =============================================================================
+
+ekf_filter_node:
+  # 节点名必须与 launch 里 Node(name='ekf_filter_node') 逐字一致。
+  # 不一致时参数静默不加载、不报任何错，节点会用全默认值跑
+  # （frequency=30、two_d_mode=false），现象与预期完全对不上，极难排查。
+  ros__parameters:
+    # 必须跟随仿真时钟。不设的话定时器跑墙钟、而消息时间戳是仿真时间，
+    # sensor_timeout 的判定会把两者相减，结果要么判定全部超时（数据全丢），
+    # 要么永不超时，frequency: 50 就成了一句空话。
+    use_sim_time: true
+
+    # 与 /odom、/imu 同为 50Hz：每个传感器来一帧就融合一帧。
+    # 调高是空转，调低会积压丢数据。
+    frequency: 50.0
+
+    # 某传感器 0.1s（约 5 个采样周期）没数据就暂停用它，节点不退出、靠另一个继续跑。
+    # 这是容错保护，不是精度参数。
+    sensor_timeout: 0.1
+
+    # 地面轮式机器人不会离地、不会翻滚。强制 z=0、roll=0、pitch=0，
+    # 防止竖直方向的噪声累积成姿态鬼影。
+    two_d_mode: true
+
+    # 接管开关：由 EKF 发布 odom -> base_footprint，差速插件必须闭嘴。
+    publish_tf: true
+
+    # world_frame 为 odom 时，map_frame 不参与任何计算，仅占位备用。
+    # 写在这里是为了将来切到 world_frame: map 时不用再补声明。
+    map_frame: map
+    odom_frame: odom
+
+    # 输出 TF 的目标帧。必须与差速插件的 robot_base_frame 一致（都是
+    # base_footprint），否则 TF 树会多出一条 odom -> base_link 的分支。
+    base_link_frame: base_footprint
+
+    # 决定发哪条 TF：world_frame 等于谁，EKF 就发"谁 -> base_link_frame"。
+    # 这里等于 odom，所以发 odom -> base_footprint。
+    # map -> odom 那条边归 AMCL 管，EKF 不碰，也不要再起第二个 EKF 去抢。
+    world_frame: odom
+
+    # 每个周期打印一张诊断表：各传感器收到几条、拒了几条、协方差是多少。
+    # 排查零协方差和参数未加载时这是第一手证据，不改任何融合结果。
+    print_diagnostics: true
+
+    # --- 下面两个 15 位数组怎么读 -------------------------------------------------
+    # 一句话：就是在拿数据的时候，说明哪些要、哪些不用。
+    #
+    # 但要补一层，否则容易理解反：标 false 并不是"不需要这个值"，而是
+    # "不采用传感器测出的这个值"。数据照样在消息里、EKF 照样收，只是不把它
+    # 当作测量值参与融合。
+    #
+    # 那 false 的项谁来给？EKF 自己算出来。比如位置：两个传感器提供的位置
+    # 都不要，但 EKF 最后照样输出位置——它先用速度积分出位置，再用航向和
+    # 角速度修正累积误差，所以它自己算的位置比任何单一传感器单独积分的都准。
+    #
+    # 这套设计的意义在于：不依赖任何单一传感器提供位置，位置是融合的结果、
+    # 不是输入。这也是它能在报告里讲得通的原因。
+    #
+    # 一句话记住：true = 我采信你这个测量；false = 这个量我自己算。
+    # ---------------------------------------------------------------------------
+
+    # --- 轮式里程计：只吃速度 -------------------------------------------------
+    odom0: /odom
+
+    # 15 位开关，顺序固定为
+    #   [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    # 只开 vx 和 vyaw：位置与姿态都是插件积分出来的，吃到就会把漂移一起带进来。
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  false, false,
+                   false, false, true,
+                   false, false, false]
+
+    # 位姿位全部关闭时，这行实际不产生任何效果（differential 只作用于位姿量）。
+    # 保留 false 是为了标记意图：这里吃的是速度，速度没有累积参考点的概念。
+    # 哪天改为吃位置，这行必须同步改成 true，否则 EKF 会把插件的绝对位置当真。
+    odom0_differential: false
+    odom0_queue_size: 10
+
+    # --- IMU：只吃绝对航向与角速度 ---------------------------------------------
+    imu0: /imu
+
+    # 只开 yaw 和 vyaw：
+    #   位置——IMU 根本不测，无意义；
+    #   速度——要靠加速度积分才有，比轮式里程计更漂；
+    #   yaw——世界系绝对量，用来栓住轮式里程计逐渐跑偏的航向，是本配置的核心；
+    #   vyaw——陀螺直接测的角速度，用于每帧短时预测。
+    # 加速度 ax 首轮关闭：Gazebo 的线性加速度是速度差分算出来的，抖动大且与
+    # odom 的 vx 高度相关，融合它等于对同一份信息重复加权；一旦协方差为 0，
+    # 抖动会被当成"完美测量"直接灌进速度估计。待 IMU 补噪声后再评估是否打开。
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+
+    # 必须 false：取 IMU 的绝对 yaw。设 true 就只取相邻帧差值，
+    # 等于把 IMU 唯一不可替代的价值丢掉。
+    imu0_differential: false
+
+    # ax 未启用时该行不产生效果，保留是为了将来打开加速度时直接生效。
+    # 另记一笔：Gazebo classic 的线性加速度本身不含重力，这里"减重力"在仿真里
+    # 减多了也无害（重力在 z 轴、且 two_d_mode 已压平）；换真机时必须重审这一行。
+    imu0_remove_gravitational_acceleration: true
+    imu0_queue_size: 10

@@ -12,6 +12,13 @@
 
   <xacro:caster_wheel_gazebo x="0.12" y="0" z="-0.025"/>
 
-  <xacro:diff_drive_plugin/>
+  <!--
+    publish_odom_tf 默认 true：差速插件继续发布 odom -> base_footprint 的 TF，
+    现有 gazebo_test.launch.py 不传该参数，解析结果与改动前完全一致（基线不受影响）。
+    EKF 场景下由 launch 传入 publish_odom_tf:=false，把 TF 发布权让给 robot_localization，
+    否则插件与 EKF 会同时发布同一对坐标系，TF 树出现冲突。
+  -->
+  <xacro:arg name="publish_odom_tf" default="true"/>
+  <xacro:diff_drive_plugin publish_odom_tf="$(arg publish_odom_tf)"/>
 
 </robot>

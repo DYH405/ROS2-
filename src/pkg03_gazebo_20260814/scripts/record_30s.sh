@@ -74,6 +74,14 @@ BAG_ROOT="$HOME/ros2_ws/bag_data"
 mkdir -p "$BAG_ROOT"
 cd "$BAG_ROOT" || exit 1
 
+# 话题清单为什么多两个：
+#   /odometry/filtered    = EKF 融合输出（B 组数据），不录就没有可对比的融合结果
+#   /gazebo/model_states  = Gazebo 真值，不录就无法计算任何误差
+# 这两个话题只在 ekf_test.launch.py 场景下才有数据；基线场景不存在时，
+# rosbag2 不会中断录制（最多提示话题未出现，之后出现了也照样能录到），
+# 因此可以无条件列入，不会影响原有基线录制。
+# 反例警告：不要为这两个话题加 wait_for_topic 前置检查 —— 基线场景它们永远不出现，
+# 会把本来正常的录制卡到超时后 exit 1。
 ros2 bag record \
 -o "bag_${DATE}" \
 /scan \
@@ -85,6 +93,8 @@ ros2 bag record \
 /amcl_pose \
 /imu \
 /clock \
+/odometry/filtered \
+/gazebo/model_states \
 /navigate_to_pose/_action/status & # 后台运行，记录进程ID
 RECORD_PID=$!
 

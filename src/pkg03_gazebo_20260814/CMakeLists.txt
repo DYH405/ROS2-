@@ -10,11 +10,15 @@ find_package(ament_cmake REQUIRED)
 find_package(urdf REQUIRED)
 find_package(xacro REQUIRED)
 
+# config 必须一起 install：ekf_test.launch.py 通过 get_package_share_directory()
+# 读取 install/ 下的 config/ekf.yaml，src/ 里的文件不会被运行时看到。
+# 漏装这一项的表现是 EKF 节点启动即退出（报参数文件不存在），而不是报配置错误。
 install(
   DIRECTORY 
   launch
   worlds
   urdf
+  config
   DESTINATION share/${PROJECT_NAME}/
 )
 

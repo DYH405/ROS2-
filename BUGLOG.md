@@ -449,3 +449,87 @@ link_states
 1. **体检输出出现「gzserver + nav2_container + capture --watch + partol_node + speech_node」五件套同时在线，且 `--watch` 指向一个活跃目录，说明有一轮实验正在进行，不是残留**——此时绝不能启动新批次。
 2. **按名字全局 `pkill` 是并发场景下的自毁操作**：只应杀本轮 PID 派生的子孙；全局清扫只适用于「本轮尚未启动任何节点」的阶段。
 3. **run_id 不能靠「读别人表的最后一行」推导**：并发时会读到同一行，必须由本轮自身携带；当前仅在 D9 串行化后不再触发，属治标。
+
+## 2026-11-07 AMCL 伪吸引子假设（M3 假设清单新增，待验证，未下结论）
+
+**来源**：2026-11-07 评审要求，M3 假设清单新增条目。
+
+**假设 H2**：AMCL 存在**伪吸引子**——激光观测与地图在若干位姿处形成局部最优，粒子云收敛到错误位姿后不再脱离；EKF 融合 IMU 航向先验能否抑制这种误收敛。
+
+**验证前提（当前不具备）**：需先接入 `robot_localization`，把 IMU 角速度/航向进 EKF 链路。当前 IMU 未接入（见 HANDOFF 2.3），故 H2 属研究内容 3 范围，不在 P1 基线内展开。**本条只登记假设，不构成结论。**
+
+**支撑事实（仅记录）**：
+
+| 事实 | 数据 |
+|:---|:---|
+| 跳变后长期不回正 | `220630` 跳变 9.97m 后 217s 不回正，末点 7.149m；`203153` 跳变 8.014m 后 256s 不回正，末点 8.014m |
+| 跳变落点贴近巡逻点 | `220630`(-3.817,2.860)→wp3 0.23m；`190212`(-3.745,2.918)→wp3 0.27m；`194611`(-4.283,2.699)→wp3 0.41m；`160101`(-4.454,3.106)→wp3 0.47m；`203153`(-4.510,3.166)→wp3 0.54m |
+| 同落点不同恢复 | `220630` 与 `190212` 落点相距 0.09m，但越阈持续 217s vs 110s、末点 7.149m vs 0.272m（n=2，不下结论） |
+
+**已排除的原因（批 1e 跳变率上升，2026-11-07 核查）**：
+
+| 候选原因 | 排除依据 |
+|:---|:---|
+| 仿真场景与地图不一致 | `robocup_home.world` 的 diff **只新增 `gazebo_ros_state` 插件（+6 行），无任何几何/家具/障碍改动**；地图 `robocup_home_map`（2026-08-13）、`my_map`（2026-08-21）mtime 早于全部实验，且场景几何自建图后未变 |
+| 巡逻逻辑被改 | `partol_node.py` 的 diff 只有 CSV 末行补 CRLF（+10 行），不涉及目标点序列与导航流程 |
+| 并发抢占 | 批 1e 两次执行是**串行**（19:35 与 20:25），`flock` 锁未报 ABORT，`[PRE]` 无 `unexpected_file_change` |
+
+**跳变率实测（只记事实）**：
+
+| 区间 | truth 轮 | 含 `jump_gt_1m` | 比例 |
+|:---|:---:|:---:|:---:|
+| 批 1e 之前 | 10 | 4 | 40% |
+| 批 1e（连续 5 轮） | 5 | 5 | **100%** |
+| 累计 | 15 | 9 | 60% |
+
+**同时观察**：批 1e 五轮的跳变时刻为 213 / 252 / 276 / 281 / 545 s，而 7 个 valid 轮的总耗时全部落在 220~230 s（mean 224.3 s、std 3.6 s）。跳变时刻与 valid 轮的结束时刻在时间上接近甚至重叠，**故「跳变率上升」与「批 1e 各轮实际运行更久」两件事无法从现有数据分离**，需专门设计对照实验才能区分，当前不做推断。
+
+---
+
+## 2026-11-08 M3 EKF 融合配置落地（改动 1-3），待验证清单 9 项
+
+**状态**：代码已写入 `src/`，**未 build、未实跑**。批量实验仍在运行，`install/` 内仍是旧副本，运行中进程不受影响。
+
+**落地内容**：
+
+| 改动 | 文件 | 内容 |
+|:---|:---|:---|
+| 1 | `urdf/parts/plugins.urdf.xacro` | 宏签名加 `params="publish_odom_tf"`，L24 改为 `${publish_odom_tf}` |
+| 2 | `urdf/model.xacro` | 新增 `xacro:arg publish_odom_tf` default=`true`，透传给宏 |
+| 3 | `config/ekf.yaml` | 新建，robot_localization 融合配置 |
+
+**默认值保持 `true`，`gazebo_test.launch.py` 不传该参数，基线解析结果与改动前逐字一致**（已用 `xacro urdf/model.xacro | grep publish_odom_tf` 待验，见下 V1）。
+
+**与任务书原稿的两处偏离**：
+
+| 项 | 任务书原稿 | 落地值 | 理由 |
+|:---|:---|:---|:---|
+| `use_sim_time` | 未声明 | `true` | EKF 定时器若不跟仿真时钟，`sensor_timeout: 0.1` 会把墙钟与仿真时间戳相减，导致判定全超时或永不超时，`frequency: 50.0` 失效 |
+| `imu0_config` 的 `ax` | `true` | `false` | Gazebo 线性加速度是速度差分得来，抖动大且与 `/odom` 的 vx 高度相关，融合等于重复加权；协方差为 0 时抖动会被当作完美测量灌进速度估计。待 IMU 补噪声后再评估 |
+
+另新增 `print_diagnostics: true`（只打印诊断表，不改融合结果），用于 V3/V5 取证。
+
+**待验证清单（首次实跑时逐条查验，结论栏留空待填）**：
+
+| 编号 | 待验证项 | 查验命令 | 判据 | 结论 |
+|:---:|:---|:---|:---|:---|
+| V1 | 默认参数未破坏基线 | `xacro urdf/model.xacro \| grep publish_odom_tf` | 输出 `true` | 待验 |
+| V2 | 参数能透传到底 | `xacro urdf/model.xacro publish_odom_tf:=false \| grep publish_odom_tf` | 输出 `false` | 待验 |
+| V3 | `/odom` twist 协方差是否全 0 | `ros2 topic echo --once /odom --field twist_covariance` | 对角有非零值 = 无雷；全 0.0 = 需 relay 重发带协方差的消息（插件未暴露参数，无法直接改） | 待验 |
+| V4 | `/imu` 三组协方差是否全 0 | `ros2 topic echo --once /imu --field orientation_covariance`（另两组同理） | 全 0.0 = 需在 `imu.urdf.xacro` 的 `<sensor>` 内补 gaussian 噪声 | 待验 |
+| V5 | EKF 参数是否真的加载 | `ros2 param get /ekf_filter_node frequency` | 返回 `50.0`；若为 `30.0` 说明 yaml 顶层 key 与 launch `name=` 不一致 | 待验 |
+| V6 | `use_sim_time` 是否生效 | `ros2 param get /ekf_filter_node use_sim_time` | 返回 `True` | 待验 |
+| V7 | TF 发布权是否真的交接 | **减法验证**：起 launch 但不启 `ekf_node`，`ros2 run tf2_ros tf2_echo odom base_footprint` | 该 TF **应完全不存在**（证明 `publish_odom_tf:=false` 生效）；再启 EKF 后 TF 回来 = EKF 接管成功 | 待验 |
+| V8 | 融合输出频率是否 50Hz | `ros2 topic hz /odometry/filtered` | ≈50Hz；显著偏离说明仿真时钟未对齐或数据积压 | 待验 |
+| V9 | yaw 是否锁死或阶梯抖动 | `ros2 topic echo /odometry/filtered --field pose.pose.orientation.z`（原地小幅转向对照） | 平滑跟随 = 正常；第一帧即固定不动或阶梯跳变 = 零协方差问题（关联 V3/V4） | 待验 |
+
+**已知设计风险（不影响本次链路验证，但影响 M3 结论能否成立）**：
+
+Gazebo 的 `/odom` 是**理想积分**——不打滑、无噪声、几乎不漂。这意味着「EKF 融合比纯里程计更准」在这套仿真里**天然缺少可对比的误差来源**。链路跑通 ≠ 论点成立。要做出可写入报告的对比，需额外设计：
+
+- 对比组：A = 纯 `/odom`，B = `/odometry/filtered`
+- 真值：`/gazebo/model_states` 的世界位姿作 ground truth
+- 制造差异：给轮子加打滑/接触噪声，或给 `/odom` 人为注入噪声后再喂 EKF
+- 指标：转向过程的 yaw 瞬时误差 + 长时间累积角误差，比终点位置误差更能体现"IMU 修航向"的价值
+
+**另一条隐含假设需写入报告**：Gazebo IMU 的 yaw 是**世界系绝对朝向**，而真机 IMU 的 yaw 相对磁北。本配置 `world_frame: odom` 之所以成立，仅因为仿真中 odom 系原点与 world 原点重合、姿态始终对齐。换真机不可直接照搬。
