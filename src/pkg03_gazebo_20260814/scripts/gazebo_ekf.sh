@@ -1,0 +1,87 @@
+#!/bin/bash
+# =============================================================================
+# gazebo.sh 的 EKF 同构副本（M3 验证专用）
+#
+# 与 gazebo.sh 的唯一差异：L62 起 ekf_test.launch.py 而不是 gazebo_test.launch.py。
+#   ekf_test.launch.py 传 publish_odom_tf:=false，差速插件不再发
+#   odom -> base_footprint；ekf_filter_node 接管这条 TF 并输出 /odometry/filtered。
+#
+# 除上述一行外，清理逻辑、参数解析、sleep 时长与 gazebo.sh 逐行一致。
+# 保持同构是为了便于 diff 审计：两份脚本的差异必须只有这一行，
+# 出现其它差异一律视为改动错误。
+#
+# 基线链路（run_base_line.sh -> gazebo.sh -> gazebo_test.launch.py）与本脚本
+# 完全隔离，互不调用，故本脚本的新增不影响任何既有基线。
+# =============================================================================
+
+cleanup() {
+  echo ""
+  echo "[Ctrl+C] 正在关闭所有进程..."
+  
+  if [[ $NO_RVIZ == false ]]; then
+    echo "关闭 RViz2..."
+    kill $RVIZ2_PID 2>/dev/null
+  fi
+ 
+  echo "优雅终止 Nav2 父进程..."
+  pkill -15 -f "nav2_bringup"
+  sleep 1.5
+  echo "强杀顽固容器组件..."
+  pkill -9 -f "nav2_container"
+ 
+  echo "关闭 Gazebo..."
+  kill $GAZEBO_PID 2>/dev/null
+  sleep 2
+ 
+  kill -9 $RVIZ2_PID 2>/dev/null
+  kill -9 $GAZEBO_PID 2>/dev/null
+  pkill -9 -f gzserver 2>/dev/null
+  pkill -9 -f gzclient 2>/dev/null
+ 
+  rm -rf /dev/shm/gz* /dev/shm/rmw*
+  echo "所有进程已关闭，共享内存已清理"
+  exit 0
+}
+NO_RVIZ=false 
+while [[ $# -gt 0 ]]; do # gt-greather-than
+  case $1 in
+    --no-rviz) NO_RVIZ=true ;shift ;; # ;; 分支结束
+    *) shift ;; # shift 左移一位，参数丢弃
+  esac
+done
+trap cleanup SIGINT SIGTERM
+ 
+pkill -9 -f gzserver 2>/dev/null
+pkill -9 -f gzclient 2>/dev/null
+rm -rf /dev/shm/gz* /dev/shm/rmw*
+sleep 1
+
+cd ~/ros2_ws
+source install/setup.bash
+
+ros2 launch pkg03_gazebo_20260814 ekf_test.launch.py headless:=true & # True，不显示 GUI=可视化
+GAZEBO_PID=$!
+sleep 3
+
+
+ros2 launch nav2_bringup bringup_launch.py \
+  use_sim_time:=True \
+  map:=/home/robot/ros2_ws/src/pkg03_gazebo_20260814/maps/my_map.yaml \
+  params_file:=/home/robot/ros2_ws/src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml &
+NAV2_PID=$!
+sleep 2.5
+
+if [[ $NO_RVIZ == false ]]; then
+ros2 run rviz2 rviz2 \
+  -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz \
+  --ros-args -p use_sim_time:=true &
+RVIZ2_PID=$!
+fi
+
+if [[ $NO_RVIZ == false ]]; then
+  echo "所有服务已启动 (Gazebo=$GAZEBO_PID, Nav2=$NAV2_PID, RViz2=$RVIZ2_PID)"
+else
+  echo "所有服务已启动 (Gazebo=$GAZEBO_PID, Nav2=$NAV2_PID, RViz2=关闭)"
+fi
+echo "按 Ctrl+C 关闭所有进程"
+wait
