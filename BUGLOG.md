@@ -533,3 +533,86 @@ Gazebo 的 `/odom` 是**理想积分**——不打滑、无噪声、几乎不漂
 - 指标：转向过程的 yaw 瞬时误差 + 长时间累积角误差，比终点位置误差更能体现"IMU 修航向"的价值
 
 **另一条隐含假设需写入报告**：Gazebo IMU 的 yaw 是**世界系绝对朝向**，而真机 IMU 的 yaw 相对磁北。本配置 `world_frame: odom` 之所以成立，仅因为仿真中 odom 系原点与 world 原点重合、姿态始终对齐。换真机不可直接照搬。
+
+---
+
+## 2026-11-12 多轮次巡航（同一进程 `max_rounds=3`）实测通过（观察级，n=1）
+
+**现象**：把 `partol_config.yaml` 的 `max_rounds` 由 `1` 改为 `3`，单次启动后连续跑完 3 轮（每轮 10 点）巡逻，**轮次交接处过渡流畅，未观察到重定位漂移、原地空转或粒子云散开**。
+
+**测试方法（必须随结论一起引用）**：只改参数 + **肉眼观察 RViz / 终端日志**；未采 CSV、未比对 `/gazebo/model_states` 真值、未记录粒子云分布。故本条结论强度为「**观察级**」，**不是**「数据级」。
+
+**为什么与 2026-11-01「不重启 Gazebo 第二轮漂移 ~90°」不冲突**：
+
+| 场景 | 是否重设初始位姿 | 结果 |
+|:---|:---|:---|
+| 2026-11-01：跑完一轮 → **关掉巡逻节点 → 重新启动脚本**，Gazebo 保持运行 | ✅ `main()` 内 `init_robot_pose()` **再次执行**，把 AMCL 覆盖为 `initial_point` 的 yaw=0，而车实际停在 yaw≈1.571 | 偏差 ~90° → 粒子发散 → RViz 四处漂移 |
+| 2026-11-12：**一次启动**，`max_rounds=3` 在同一进程内循环 | ❌ `init_robot_pose()` 位于 `while` 循环**之外**，全程只执行一次；第 2、3 轮沿用上一轮末态 | 无覆盖 → 无 90° 偏差 |
+
+即：前者是「**跨进程重复初始化**」，后者是「**同进程多轮**」，代码路径不同，两者不能互相证伪。`init_robot_pose()` 的位置见 [partol_node.py:L230](file:///home/robot/ros2_ws/src/autopartol_robot/autopartol_robot/partol_node.py#L230-L230)，多轮循环见 [partol_node.py:L240](file:///home/robot/ros2_ws/src/autopartol_robot/autopartol_robot/partol_node.py#L240-L240)。
+
+**结论边界（措辞纪律）**：
+
+- 只能写「**本次 3 轮、肉眼观察、过渡流畅**」；**不得**写「多轮问题已解决」或「可无限连跑」
+- 未验证项：第 2、3 轮的末点位置/航向是否逐轮劣化（CSV 未看）、粒子云是否逐轮变宽、`max_rounds` 更大（如 10）时是否仍稳定
+- 本次测试时 `recovery_alpha_fast/slow` **仍为 `0.0`**（见下一条），故本结果**不含恢复机制的作用**，属"关闭恢复下的连跑基线"
+
+**遗留**：`partol_config.yaml` 第 17 行注释「不重启会导致第二轮起 AMCL 初始化位姿与上一轮末点 yaw 不一致」易被误读为「`max_rounds>1` 也会漂」。建议改为「**重新启动巡逻脚本**（而非同一次启动内的多轮）时…」。
+
+---
+
+## 2026-11-12 AMCL 随机粒子注入被完全关闭（`recovery_alpha_fast/slow = 0.0`）→ 已开启 0.1 / 0.001（待实跑）
+
+**现象**：两个定位顽疾的共同根因之一——①「初始化朝上、实际朝左」时 AMCL **自信地错下去**；②「角落旋转漂移后被粒子云包围」长期不回正。
+
+**根因**：这两个 alpha 是**两条观测质量滑动平均的衰减率**，不是概率：
+
+```
+w_slow += alpha_slow * (w_avg - w_slow)     # 长期平均观测质量
+w_fast += alpha_fast * (w_avg - w_fast)     # 当前观测质量
+w_diff  = max(0, 1 - w_fast / w_slow)       # 随机注入概率
+```
+
+- 两值都为 `0.0` 时，`w_slow` / `w_fast` 仅在首次更新被置为当帧 `w_avg`，**此后永不更新**，两者恒相等 ⇒ `w_diff ≡ 0`
+- 于是**无论雷达与地图多不匹配，都不会注入均匀分布随机粒子**，粒子云只能朝"错误但自洽"的方向继续收敛
+
+**修改前 → 修改后**（[nav2_params_hybrid.yaml:L26-L30](file:///home/robot/ros2_ws/src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml#L26-L30)）：
+
+```yaml
+    # 修改前
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    # 修改后（Nav2 推荐值）
+    recovery_alpha_fast: 0.1
+    recovery_alpha_slow: 0.001
+```
+
+**只改一个文件：三处出现，仅一处生效**：
+
+| 文件 | 是否生效 | 依据 |
+|:---|:---|:---|
+| `config/nav2_params_hybrid.yaml` | ✅ 生效 | [gazebo.sh:L56](file:///home/robot/ros2_ws/src/pkg03_gazebo_20260814/scripts/gazebo.sh#L56-L56)、[gazebo_ekf.sh:L70](file:///home/robot/ros2_ws/src/pkg03_gazebo_20260814/scripts/gazebo_ekf.sh#L70-L70) 均传 `params_file:=.../nav2_params_hybrid.yaml` |
+| `config/nav2_params.yaml` | ❌ 未引用 | 两脚本均未指向它，**仍为 0.0/0.0** |
+| `wpr_simulation2/config/nav2_params.yaml` | ❌ 未引用 | 同上，**仍为 0.0/0.0** |
+
+**不需要 `colcon build`**：`params_file` 是**指向 `src/` 的绝对路径**，不是 `install/` 副本，下次启动 `gazebo.sh` 即生效。
+
+**调参方向（实跑后按现象二选一）**：
+
+| 现象 | 判断 | 调整 |
+|:---|:---|:---|
+| 正常直行时粒子云频繁炸开、位姿抖动 | `alpha_fast` 偏大（恢复过度敏感） | `alpha_fast` 下调至 0.05 左右 |
+| 给错 90° 后迟迟不恢复 | `alpha_fast` 偏小（自救太慢） | 上调至 0.2 |
+| 轻微观测退化就触发注入 | `alpha_slow` 偏小 | 上调至 0.005 左右 |
+
+**预期形态**：恢复不是"立刻纠正"。注入粒子从自由空间均匀采样，需若干次重采样 + 运动累积才能收敛，表现应为「粒子云先扩散、再逐步收紧到正确位姿」。
+
+**状态**：配置**已改、未 build、未实跑**。待验证 3 项：
+
+| 编号 | 待验证项 | 判据 |
+|:---:|:---|:---|
+| R1 | 故意给错 90° 初始位姿 | 若干秒内粒子云从错误位姿收回到正确位姿（自救窗口存在） |
+| R2 | 正常直行/转弯是否过度发散 | 粒子云不频繁散开、位姿无明显抖动 |
+| R3 | 角落旋转后是否仍被粒子云包围 | 若仍发生，说明根因不只在注入，需查 `update_min_a/d`（0.2/0.25 偏大）与 `max_beams: 60` |
+
+**关联**：本条与 2026-11-07「AMCL 伪吸引子假设（H2）」直接相关——恢复机制开启后，H2 的"收敛到错误位姿后不再脱离"前提被削弱，H2 的 A/B 对照需重新设计基线。

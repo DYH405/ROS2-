@@ -23,8 +23,11 @@ amcl:
     odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
-    recovery_alpha_fast: 0.0
-    recovery_alpha_slow: 0.0
+    # 恢复机制-随机粒子注入(random particle injection):两值同时为0.0即完全关闭,
+    # 注入概率=1-w_fast/w_slow,两值都为0时w_slow/w_fast只初始化不更新,该概率恒为0,
+    # 粒子云一旦收敛到错误位置便无法自救(初始位姿给错90°、角落旋转被粒子云包围的根因之一)
+    recovery_alpha_fast: 0.1 # 快恢复-当前观测质量的平均权重衰减率,越大越贴合单帧,Nav2推荐0.1
+    recovery_alpha_slow: 0.001 # 慢恢复-长期观测质量的平均权重衰减率,越小基准越稳,Nav2推荐0.001
     resample_interval: 1
     robot_model_type: "nav2_amcl::DifferentialMotionModel"
     save_pose_rate: 0.5

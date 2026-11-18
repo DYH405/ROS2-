@@ -776,3 +776,110 @@ cd ~/ros2_ws && ./scripts/run_one_experiment.sh
 7. **`gazebo_ros_state` 是 `WorldPlugin`**，`gzserver -s libgazebo_ros_state.so` 会被 Gazebo 拒绝（`incorrect plugin type`）且**不报错退出**，只在日志留 `[Err]`；必须写进 world SDF。
 
 **CSV 换行守卫**：`append_run_record()` 写前用 `rb` 读末字节，非 `\n` 则先补 `\r\n`；`write_header` 判据改为 `has_content`。**12 列表头、`rejected` 独立、5 项等式、异常只 `warn` 均未改动**。
+
+---
+
+## 十三、2026-11-10 更新：`/odom` 数据源切换 WORLD → ENCODER 并复测通过
+
+> 详细验证记录见 `docs/VERIFY_ODOM_SOURCE.md`（第七、八节）。本节只做索引与待办。
+
+### 13.1 本次完成内容
+
+| 改动 | 文件 | 内容 |
+|:---|:---|:---|
+| 1 | `urdf/parts/plugins.urdf.xacro` | 差速插件块内新增 `<odometry_source>0</odometry_source>`（+21 行注释，说明双分支、必须写整数、静默回退坑） |
+| 2 | `docs/VERIFY_ODOM_SOURCE.md` | 新增第七节（ENCODER 切换复测结果）、第八节（待办） |
+| 3 | `HANDOFF.md` | 本节 |
+
+**未改动**：`gazebo.sh`、`slam.sh`、`run_one_experiment.sh`、`nav2_params_hybrid.yaml`、`ekf.yaml` 一律未动。
+
+### 13.2 结论（可直接引用）
+
+- `/odom` 已从 WORLD（世界真值）切换为 ENCODER（轮式积分），**A 组（纯 odom）正式成立**
+- 实测位置误差：3.07 m 处 0.343 m（11.2%）、5.10 m 处 1.252 m（24.5%）；yaw 误差 +3.63° / +40.45°
+- 误差**横向占 95%~98%** ⇒ 主因是航向多估（转弯时驱动轮空转），不是轮径标定
+- 因此 IMU 修航向的 A/B 对比方向明确：A 组横向误差累积，B 组应压住
+
+### 13.3 ⚠️ 对既有基线数据的影响（必须写进报告）
+
+`nav2_params_hybrid.yaml` 中 AMCL 的 `odom_topic: /odom`。修复前 `/odom` 即真值，等于 **AMCL 一直在用完美里程计**，定位误差趋近 0。
+
+**已有 16 个有效 bag 与批量实验的成功率、路径偏差等指标均属乐观上界，与新数据不可直接混用。** 这条本身可作为方法论材料：*仿真默认配置下里程计等价于真值，导致导航评估系统性偏乐观*。
+
+### 13.4 待办记录
+
+| 编号 | 待办 | 优先级 | 说明 |
+|:---:|:---|:---:|:---|
+| D-01 | **巡航时连续采样漂移曲线** | 🟡 | 每 0.5 s 采一次 `odom` vs `/gazebo/model_states` 写 CSV（`err_pos` / `err_yaw`），yaw 差用 `atan2(sin,cos)` 归一化。现有只有两个单点，无法判定线性/超线性 |
+| D-02 | 查两轮之间是否重启仿真 | 🟢 零成本 | 翻 Nav2 终端历史找 `Spin` / `Backing Up` / `Clearing costmap`；出现即说明卡住空转 |
+| D-03 | 纯直行 1 m 看 yaw 是否漂 | 🟡 | 只发 `linear.x`，不发角速度。直行也漂 = 左右轮不对称；不漂 = 确认转弯打滑 |
+| D-04 | 同路径 1 m / 2 m / 3 m 三点取数 | 🟡 | 线性增长 = 累积漂移；基本恒定 = 坐标系偏移 |
+| D-05 | 重启后车未动时取一次数 | 🟡 | 应接近 0；若起步即数十厘米，说明 odom 与 world 原点有偏移 |
+| D-06 | AMCL `odom_topic` 是否改为 `/odometry/filtered` | 🟡 M3 决策 | 现状仍为 `/odom`；EKF 场景下 TF 发布者与 AMCL 输入源不一致，需在 M3 验证后决定 |
+| D-07 | IMU 协方差补噪声 | 🔴 必要 | `gazebo_ros_imu_sensor` 不填协方差默认全 0 ⇒ robot_localization 视为完美测量，滤波器退化。原「优化项」升级为「前置条件」 |
+
+**建议顺序**：D-02（零成本）→ D-05（排坐标系）→ D-01（拿曲线）→ D-03 / D-04（分离误差来源）→ D-07 → D-06。
+
+### 13.5 踩坑补充
+
+**差速插件 `odometry_source` 的静默回退**：源码用 `Get<int>("odometry_source", WORLD)` 解析，**写成字符串 `ENCODER` 会解析失败**，`Get<int>` 失败时直接返回默认值 WORLD 且**不报任何错误**。表现为"改了、build 了、重启了，行为一点没变"。必须写整数 `0`（ENCODER）/ `1`（WORLD）。
+
+**复测必须重启仿真**：URDF 在 spawn 时刻读入，只重启 Nav2 或只重开 RViz 无效。
+
+---
+
+## 十四、2026-11-12 更新：多轮巡航验证 + AMCL 恢复机制开启
+
+> 详细记录见 `BUGLOG.md` 同日两条（多轮巡航验证、`recovery_alpha` 开启）。本节只做索引与待办。
+
+### 14.1 本次改动
+
+| 改动 | 文件 | 内容 |
+|:---|:---|:---|
+| 1 | `src/autopartol_robot/config/partol_config.yaml` | `max_rounds: 1` → `3` |
+| 2 | `src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml` | `recovery_alpha_fast/slow: 0.0/0.0` → `0.1/0.001`，并补 3 行机制注释 |
+
+**未改动**：`partol_node.py`、`gazebo.sh`、`gazebo_ekf.sh`、`nav2_params.yaml`、`wpr_simulation2/config/nav2_params.yaml`、`ekf.yaml`。
+
+### 14.2 验证结果
+
+| 项 | 方法 | 结论 | 强度 |
+|:---|:---|:---|:---|
+| 多轮巡航 `max_rounds=3` | 改参数 + **肉眼观察**，单次启动连跑 3 轮 | 3 轮跑完，轮次交接过渡流畅，无重定位漂移/空转 | **观察级，n=1** |
+| 恢复机制开启 | — | **未实跑**，配置已落盘 | 待验 |
+
+**多轮结论的边界（措辞纪律）**：只能写「本次 3 轮、肉眼观察、过渡流畅」；不得写「多轮问题已解决」或「可无限连跑」。未采 CSV、未比对真值、未记录粒子云。
+
+### 14.3 与 2026-11-01「第二轮漂移 ~90°」的关系（重要，勿混用）
+
+| 场景 | 是否重设初始位姿 | 结果 |
+|:---|:---|:---|
+| 关掉巡逻节点 → **重新启动脚本**，Gazebo 不重启 | ✅ `init_robot_pose()` 再执行一次，覆盖为 yaw=0，车实际 yaw≈1.571 | 偏差 ~90° → 发散 |
+| **一次启动**、`max_rounds=3` 同进程循环 | ❌ `init_robot_pose()` 在 `while` 外，只执行一次 | 无覆盖 → 无 90° 偏差 |
+
+**12.3 节「每次 run 前必须重启 Gazebo」的流程约定依然有效**，其约束对象是「跨 run 重复启动巡逻脚本」，不适用于「同一次启动内的多轮」。
+
+### 14.4 恢复机制参数语义（`recovery_alpha_*`）
+
+```
+w_slow += alpha_slow * (w_avg - w_slow)     # 长期平均观测质量
+w_fast += alpha_fast * (w_avg - w_fast)     # 当前观测质量
+w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
+```
+
+两值同时为 `0.0` ⇒ `w_slow`/`w_fast` 冻结、恒相等 ⇒ `w_diff ≡ 0` ⇒ **注入机制完全关闭**，粒子云收敛到错误位姿后无法自救。
+
+### 14.5 待办记录
+
+| 编号 | 待办 | 优先级 | 说明 |
+|:---:|:---|:---:|:---|
+| R1 | 故意给错 90° 初始位姿，看是否自救 | 🔴 | 恢复机制存在的直接判据 |
+| R2 | 正常行驶是否过度发散 | 🟡 | 若粒子云频繁炸开，`alpha_fast` 下调至 0.05 |
+| R3 | 角落旋转后是否仍被粒子云包围 | 🟡 | 若仍发生，根因不只在注入，需查 `update_min_a/d`(0.2/0.25) 与 `max_beams: 60` |
+| R4 | 多轮数据级验证 | 🟡 | 采 CSV + 真值，看第 2/3 轮末点是否逐轮劣化（关联 D-01） |
+| R5 | 同步 `nav2_params.yaml` 与 `wpr_simulation2` 副本 | 🟢 | 二者仍为 0.0/0.0，做 A/B 对照时会混入变量 |
+| R6 | 修正 `partol_config.yaml` 第 17 行注释措辞 | 🟢 | 现注释易被误读为「`max_rounds>1` 也会漂」 |
+
+### 14.6 踩坑补充
+
+**`params_file` 路径决定是否需 build**：`gazebo.sh` 传的是 `src/` 下绝对路径，改 yaml 即生效；而 `autopartol.launch.py` 用 `get_package_share_directory()` 读 `install/` 副本，改 `partol_config.yaml` **必须 `colcon build`**（除非曾用 `--symlink-install`）。同一次改动里两个文件，生效方式不同。
