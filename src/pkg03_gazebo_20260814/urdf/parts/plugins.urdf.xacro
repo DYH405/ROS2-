@@ -21,7 +21,38 @@
         <left_joint>left_wheel_joint</left_joint>
         <right_joint>right_wheel_joint</right_joint>
 
-        <wheel_separation>0.24</wheel_separation>
+        <!--
+          wheel_separation：左右驱动轮接触点之间的横向距离（米），
+          差速运动学里同时用在两个地方，配错会同时污染两件事：
+            1) 由 cmd_vel 反解轮速：v_L = v - w*sep/2，v_R = v + w*sep/2
+               —— sep 偏小 ⇒ 两轮速度差偏小 ⇒ 物理转向比指令慢
+            2) 由轮速积分航向：th = (d_R - d_L)/sep
+               —— sep 偏小 ⇒ 同样的轮子行程积出更大的航向角 ⇒ /odom 航向被放大
+
+          [2026-11-23 修正] 原值 0.24 是错的，实际几何是 0.36，差 1.5 倍：
+            model.xacro 里左右轮组挂载在 y = ±0.12；
+            wheel.urdf.xacro 里轮心相对轮组再外移
+              motor_l/2 + shaft_length + wheel_length/2 = 0.03+0.02+0.01 = ±0.06；
+            故轮心 y = ±(0.12 + 0.06) = ±0.18，接触点间距 = 0.36。
+
+          错配的后果（0.24/0.36 = 2/3）：
+            物理转向速率 = 指令的 2/3（发 1.0 rad/s 实际约 0.67 rad/s）；
+            /odom 航向 = 真实转动的 1.5 倍（物理转 60°、odom 报 90°）。
+          两者叠加后 /odom 航向恰好与指令一致，于是"看起来里程计很准"，
+          但真值只有指令的 2/3 —— 这就是巡航中原地转向段航向误差偏大的
+          系统性来源（2026-11-23 三组实测：原地转 180° 航向偏差可达 40°）。
+          该误差是比例型、随转动角度线性累积，不能靠调 alpha 掩盖：
+          2026-11-23 把 alpha 压到 0.05 的那组因此彻底跟丢
+          （见 docs/AMCL_PARAM_SWEEP_ARCHIVE.md C 组）。
+
+          轮径 0.10 与 wheel_radius 0.05 是自洽的，所以直线运动不受此错误影响，
+          偏差只出现在转向。
+
+          注意：launch 读的是 install/ 下的副本，改完必须重新编译本包
+            （colcon build 时用 packages-select 参数只编 pkg03_gazebo_20260814），
+          再重启 Gazebo 才生效。
+        -->
+        <wheel_separation>0.36</wheel_separation>
         <wheel_diameter>0.10</wheel_diameter>
 
         <max_wheel_torque>20</max_wheel_torque>
