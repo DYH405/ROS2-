@@ -1,7 +1,7 @@
 # ROS2 仿真导航项目 — 交接文档
 
-> 更新时间：2026-11-07
-> 当前阶段：P1 收尾 / 路线切换
+> 更新时间：2026-11-23
+> 当前阶段：M3 EKF 前置 — AMCL 参数对照收尾 + 差速插件几何修正
 
 ---
 
@@ -880,6 +880,38 @@ w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
 | R5 | 同步 `nav2_params.yaml` 与 `wpr_simulation2` 副本 | 🟢 | 二者仍为 0.0/0.0，做 A/B 对照时会混入变量 |
 | R6 | 修正 `partol_config.yaml` 第 17 行注释措辞 | 🟢 | 现注释易被误读为「`max_rounds>1` 也会漂」 |
 
-### 14.6 踩坑补充
+### 14.6 AMCL 参数单变量对照实验（2026-11-22 ~ 11-23，四组）
+
+**归档**：[docs/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/AMCL_PARAM_SWEEP_ARCHIVE.md)（含失败组，原样保留）
+
+执行入口 `scripts/run_amcl_test.sh`：一条命令拉起 Gazebo + Nav2 + RViz2 + 真实巡航链路 `ros2 launch autopartol_robot autopartol.launch.py`，后台每 0.5 s 采真值（`/gazebo/model_states`）与 `/amcl_pose`，收尾自动算指标。分析用 `scripts/amcl_compare.py`（更新时刻口径并排）与 `scripts/odom_spin_probe.py`（原地转向比值探针）。
+
+| 组 | 参数 | 结果 | 判定 |
+|:---:|:---|:---|:---|
+| A | z .5/.5, α .2 | 10/10，207.7 s，末点 0.033 m | 有效基线 |
+| B | z .9/.1, α .2 | 10/10，198.1 s，末点 0.033 m | **有效** |
+| C | z .9/.1, α .05 | **8/10，462.0 s，末点 6.892 m** | **失败，已回滚** |
+| D | z .9/.1, α .2（回滚复现） | 10/10，199.5 s，末点 **0.009 m**，BT 失败 7（均自恢复） | **B 复现，n=2 定稿** |
+
+**⚠️ 关键前提（2026-11-23 事后发现）**：A~D 四组运行时 `wheel_separation` 为 **0.24，而实际轮距 0.36**（`model.xacro` 轮组 ±0.12 + `wheel.urdf.xacro` 轮心再外移 ±0.06 ⇒ 轮心 ±0.18）。后果：**物理转向速率只有指令的 2/3、`/odom` 航向被放大 1.5 倍**。两者叠加使 `/odom` 恰好与指令一致，形成「里程计很准」的假象。**A~D 四组的 yaw 类指标全部失效，不得作为 AMCL 精度上报**；位置类指标不受影响（轮径自洽）。已修（`plugins.urdf.xacro` 改 0.36 + `colcon build`），探针实测 `odom/真值` 1.5 → **1.055**、`真值/指令` 0.667 → **0.955**，残余 5.5% 为真实轮胎滑移。
+
+**关键方法论（务必沿用）**：`/amcl_pose` 受 `update_min_d: 0.25` / `update_min_a: 0.2 rad` 门限约束，呈阶梯状，与 0.5 s 连续真值之间必然存在「车在走、估计不动」的空档。**`summary.txt` 里的「最大位置误差」是阶梯假象，不能作为精度上报**（A 组 0.433 m 与 B 组 0.474 m 均为此类）。正确口径为「只在 `/amcl_pose` 数值变化的时刻统计」，或改采 TF `map->base_footprint`。A 组该口径下：位置误差 mean 0.102 / max 0.336。
+
+**C 组负结果**：`alpha1~alpha4 0.05` 使航向散开仅 2.6°，远小于旋转期的航向偏差，粒子云覆盖不到真值 → 粒子耗尽 → 118.6 s 位姿瞬移 3.6 m 切换错误假设。**`alpha` 不能按「每步标准差匹配」定标**（该误差是系统性比例偏差、随距离线性累积，非白噪声）。事后确认那 40° 偏差的真实来源正是 `wheel_separation` 错误，C 组结论因此更成立。
+
+**末点航向超调**：A +20.5°、B +17.0°、D +18.1°，而 `yaw_goal_tolerance` 仅 8.6°。D 组末点 AMCL 与真值 yaw 完全一致（误差 0.00°），证明**超调不是 AMCL 估计错，而是车真的多转了**。机理为「判到位瞬间估计滞后 → 判成功 → 停车后补正」，量级 ≈ `update_min_a` 门限 + 容差。修正 `sep` 后物理转速变快，超调可能涨到 22~25°，需在新基线重测。
+
+### 14.7 下一步（几何修正后必须重建基线）
+
+| 编号 | 待办 | 说明 |
+|:---:|:---|:---|
+| E1 | **重建基线 E 组**：`sep 0.36` + `z .9/.1` + `alpha 0.2` | 🔴 几何已变，A~D 不再同源；后续对照以此为准 |
+| E2 | 单独测 `update_min_a: 0.2 → 0.05` | 必须在 E1 之后，避免双变量 |
+| E3 | `max_vel_theta: 1.0` 是否降到 0.67 | 视 E1 超调是否涨到 22~25° 再定 |
+| E4 | `laser_likelihood_max_dist: 2.0` 与 `sigma_hit: 0.05` 匹配性核查 | 现有不匹配项 |
+| E5 | `recovery_alpha_fast/slow` 实跑验证 | 仍未实跑（见 14.5 R1） |
+| E6 | 可选：同步 `worlds/one.world` 的 `wheel_separation` | 该 world 无引用，死副本 |
+
+### 14.8 踩坑补充
 
 **`params_file` 路径决定是否需 build**：`gazebo.sh` 传的是 `src/` 下绝对路径，改 yaml 即生效；而 `autopartol.launch.py` 用 `get_package_share_directory()` 读 `install/` 副本，改 `partol_config.yaml` **必须 `colcon build`**（除非曾用 `--symlink-install`）。同一次改动里两个文件，生效方式不同。
