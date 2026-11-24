@@ -14,3 +14,4 @@ __pycache__/
 img_*.png
 experiment_logs/
 /archive/
+tmp/
