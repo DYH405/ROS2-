@@ -703,3 +703,17 @@ cd ~/ros2_ws/src/pkg03_gazebo_20260814 && grep -rn -- '--' urdf/ | grep -v '<!--
 ```
 
 **关联**：详见 [docs/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/AMCL_PARAM_SWEEP_ARCHIVE.md) 第 4.5 节、[docs/VERIFY_ODOM_SOURCE.md](file:///home/robot/ros2_ws/docs/VERIFY_ODOM_SOURCE.md) 第九节。
+
+## 2026-11-25 HANDOFF 现状段三处过时（文档校正）
+
+**现象**：`HANDOFF.md` 第二章「正常定位 + 正常导航」与 2.4 节描述与当前代码/脚本不符。
+
+**三处偏差**：
+
+| 位置 | 原文 | 实际 |
+|:---|:---|:---|
+| L46 | Nav2 参数 `nav2_params.yaml` | `gazebo.sh` L56 用的是 `nav2_params_hybrid.yaml`，基线 yaml 备用 |
+| L58 | IMU 未接入 EKF 融合链路 | `ekf_test.launch.py` / `gazebo_ekf.sh` / `run_ekf_line.sh` / `ekf.yaml` 均已就位 |
+| L63 | 录 9 个话题 | `record_30s.sh` L87-L98 实际 12 个（多 `/odometry/filtered`、`/gazebo/model_states`、action status） |
+
+**处置**：按当前 `master` 校正三行，并在文首加一行校正说明；原文留档 `docs/archive/handoff/HANDOFF_pre_correction.md`。

@@ -1,6 +1,7 @@
 # ROS2 仿真导航项目 — 交接文档
 
 > 更新时间：2026-11-23
+> 2026-11-25 按当前 `master` 校正：Nav2 参数入口、IMU/EKF 链路状态、rosbag 话题数
 > 当前阶段：M3 EKF 前置 — AMCL 参数对照收尾 + 差速插件几何修正
 
 ---
@@ -43,7 +44,7 @@
 ### 2.3 正常定位 + 正常导航
 
 - 地图：`src/pkg03_gazebo_20260814/maps/my_map.yaml` + `my_map.pgm`
-- Nav2 参数：`src/pkg03_gazebo_20260814/config/nav2_params.yaml`
+- Nav2 参数：`src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml`（当前入口；`nav2_params.yaml` 为基线备用）
 - 巡逻节点：`autopartol_robot` — 10个巡逻点 + 超时机制（`total_goals` 语义 = 巡逻点数量 = 10）
 - 联合启动：`autopartol.launch.py`（巡逻+语音+图像）
 - 健壮性修复（2026-10-25）：
@@ -55,12 +56,12 @@
   - `max_rounds` 参数支持多轮巡逻 + 全程统计
   - `gazebo.sh` 新增 `--no-rviz` 参数
 
-> ⚠️ **IMU 状态说明**：当前 IMU（`/imu`）仅作为 Gazebo 仿真传感器存在，**未接入 `robot_localization` / EKF 融合链路**。定位仍依赖 AMCL（基于 `/scan` + `/odom`），不属于多传感器融合定位。如需融合，需额外引入 `robot_localization` 节点并配置 EKF/UKF。
+> ⚠️ **IMU 状态说明**：IMU（`/imu`）已接入 `robot_localization` EKF 融合链路 —— `config/ekf.yaml` + `launch/ekf_test.launch.py` + `scripts/gazebo_ekf.sh` + `scripts/run_ekf_line.sh`。`ekf_test.launch.py` 传 `publish_odom_tf:=false`，差速插件不再发 `odom -> base_footprint`，由 `ekf_filter_node` 接管该 TF 并输出 `/odometry/filtered`。默认入口 `gazebo.sh` 仍走 AMCL（基于 `/scan` + `/odom`）。
 
 ### 2.4 rosbag 录制 — `record_30s.sh`（已优化）
 
 - 路径：`src/pkg03_gazebo_20260814/scripts/record_30s.sh`
-- 录制话题：`/scan /tf /tf_static /cmd_vel /odom /plan /amcl_pose /imu /clock`（9个）
+- 录制话题：`/scan /tf /tf_static /cmd_vel /odom /plan /amcl_pose /imu /clock /odometry/filtered /gazebo/model_states /navigate_to_pose/_action/status`（12个）
 - 特性：
   - 话题就绪检测：录制前等待 /odom /scan /cmd_vel 出现
   - 双模式停止：默认 Ctrl+C / `-w` 模式监听话题消失自动停止
