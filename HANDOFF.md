@@ -782,14 +782,14 @@ cd ~/ros2_ws && ./scripts/run_one_experiment.sh
 
 ## 十三、2026-11-10 更新：`/odom` 数据源切换 WORLD → ENCODER 并复测通过
 
-> 详细验证记录见 `docs/VERIFY_ODOM_SOURCE.md`（第七、八节）。本节只做索引与待办。
+> 详细验证记录见 `docs/operations/VERIFY_ODOM_SOURCE.md`（第七、八节）。本节只做索引与待办。
 
 ### 13.1 本次完成内容
 
 | 改动 | 文件 | 内容 |
 |:---|:---|:---|
 | 1 | `urdf/parts/plugins.urdf.xacro` | 差速插件块内新增 `<odometry_source>0</odometry_source>`（+21 行注释，说明双分支、必须写整数、静默回退坑） |
-| 2 | `docs/VERIFY_ODOM_SOURCE.md` | 新增第七节（ENCODER 切换复测结果）、第八节（待办） |
+| 2 | `docs/operations/VERIFY_ODOM_SOURCE.md` | 新增第七节（ENCODER 切换复测结果）、第八节（待办） |
 | 3 | `HANDOFF.md` | 本节 |
 
 **未改动**：`gazebo.sh`、`slam.sh`、`run_one_experiment.sh`、`nav2_params_hybrid.yaml`、`ekf.yaml` 一律未动。
@@ -883,7 +883,7 @@ w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
 
 ### 14.6 AMCL 参数单变量对照实验（2026-11-22 ~ 11-23，四组）
 
-**归档**：[docs/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/AMCL_PARAM_SWEEP_ARCHIVE.md)（含失败组，原样保留）
+**归档**：[docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md)（含失败组，原样保留）
 
 执行入口 `scripts/run_amcl_test.sh`：一条命令拉起 Gazebo + Nav2 + RViz2 + 真实巡航链路 `ros2 launch autopartol_robot autopartol.launch.py`，后台每 0.5 s 采真值（`/gazebo/model_states`）与 `/amcl_pose`，收尾自动算指标。分析用 `scripts/amcl_compare.py`（更新时刻口径并排）与 `scripts/odom_spin_probe.py`（原地转向比值探针）。
 

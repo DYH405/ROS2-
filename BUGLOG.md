@@ -653,7 +653,7 @@ rot_hat_stddev   = sqrt(alpha4 * d_rot^2   + alpha2 * d_trans^2)
 
 **结论与处置**：`alpha1~alpha4` **回退至 0.2**（不回 0.1，因这是灾难性失败而非边际劣化，0.1 无证据安全，0.2 已被 A/B 两轮证明可用）。本项作为**有效负结果**保留：仿真里程计误差是系统性偏差，`alpha` 不能按「每步标准差匹配」定标。
 
-**关联**：详细三组参数、口径方法论、数据缺陷清单见 [docs/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/AMCL_PARAM_SWEEP_ARCHIVE.md)。
+**关联**：详细三组参数、口径方法论、数据缺陷清单见 [docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md)。
 
 **事后更正（同日）**：上述「180° 转向航向漂移约 40°」的真实来源不是轮胎打滑，而是差速插件 `wheel_separation` 配错（0.24 vs 实际 0.36），详见下一条。C 组结论不变且更充分。
 
@@ -702,7 +702,7 @@ rot_hat_stddev   = sqrt(alpha4 * d_rot^2   + alpha2 * d_trans^2)
 cd ~/ros2_ws/src/pkg03_gazebo_20260814 && grep -rn -- '--' urdf/ | grep -v '<!--' | grep -v '-->'
 ```
 
-**关联**：详见 [docs/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/AMCL_PARAM_SWEEP_ARCHIVE.md) 第 4.5 节、[docs/VERIFY_ODOM_SOURCE.md](file:///home/robot/ros2_ws/docs/VERIFY_ODOM_SOURCE.md) 第九节。
+**关联**：详见 [docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md) 第 4.5 节、[docs/operations/VERIFY_ODOM_SOURCE.md](file:///home/robot/ros2_ws/docs/operations/VERIFY_ODOM_SOURCE.md) 第九节。
 
 ## 2026-11-25 HANDOFF 现状段三处过时（文档校正）
 

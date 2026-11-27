@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>Gazebo 仿真与 Nav2 启动入口：世界、URDF、参数、脚本</description>
   <maintainer email="2146145550@qq.com">dyh</maintainer>
-  <license>MIT</license>
+  <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

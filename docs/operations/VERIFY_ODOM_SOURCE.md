@@ -502,7 +502,7 @@ B 组（EKF 融合 IMU）：航向靠陀螺仪   → 不受打滑影响 → 横�
 
 - 修复：`urdf/parts/plugins.urdf.xacro` `wheel_separation 0.24 → 0.36`，`colcon build --packages-select pkg03_gazebo_20260814` 后重启 Gazebo 生效。
 - `worlds/one.world` 内也有 0.24，但该 world 无任何引用（实际用 `robocup_home.world` + `spawn_entity` 注入 xacro），死副本，未动。
-- **对既有数据**：AMCL 对照实验 A~D 四组的 **yaw 类指标全部失效**（输入自带 50% 比例误差）；位置类指标不受影响。见 [AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/AMCL_PARAM_SWEEP_ARCHIVE.md) 4.5。
+- **对既有数据**：AMCL 对照实验 A~D 四组的 **yaw 类指标全部失效**（输入自带 50% 比例误差）；位置类指标不受影响。见 [AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md) 4.5。
 - **第八节待办状态更新**：D-03 / D-04 **作废**（判据基于错误前提）；其目标（区分打滑与累积漂移）已由本节探针一次性回答。D-01（漂移曲线）仍可做，但需在 `sep 0.36` 的新基线上重新采集。
 
 ### 9.6 一个遗留观察
