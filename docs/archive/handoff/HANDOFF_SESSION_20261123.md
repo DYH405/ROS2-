@@ -3,8 +3,8 @@
 > 写于 2026-11-23，用途：把这一整段对话的来龙去脉、结论、数据、坑、剩余待办一次性交接出去。
 > **本文档只用于交接，不承担长期维护职责**；长期结论已分别沉淀在
 > [BUGLOG.md](file:///home/robot/ros2_ws/BUGLOG.md)、[HANDOFF.md](file:///home/robot/ros2_ws/HANDOFF.md)、
-> [docs/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/AMCL_PARAM_SWEEP_ARCHIVE.md)、
-> [docs/VERIFY_ODOM_SOURCE.md](file:///home/robot/ros2_ws/docs/VERIFY_ODOM_SOURCE.md)。
+> [docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md)、
+> [docs/operations/VERIFY_ODOM_SOURCE.md](file:///home/robot/ros2_ws/docs/operations/VERIFY_ODOM_SOURCE.md)。
 > 读完本文若只想记一件事：**`wheel_separation` 已从 0.24 修成 0.36，A~D 四组的 yaw 指标因此全部作废，下一步是重建基线 E 组。**
 
 ---
@@ -173,10 +173,10 @@ cd ~/ros2_ws/src/pkg03_gazebo_20260814 && grep -rn -- '--' urdf/ | grep -v '<!--
 
 ### 阶段 6：文档归档 + git 提交
 
-- 四组实验（含失败组）完整归档进 `docs/AMCL_PARAM_SWEEP_ARCHIVE.md`（7 章：目的判据 / 方法 / 参数结果 / 逐组分析 / 缺陷清单 / 结论 / 待办）
+- 四组实验（含失败组）完整归档进 `docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md`（7 章：目的判据 / 方法 / 参数结果 / 逐组分析 / 缺陷清单 / 结论 / 待办）
 - `BUGLOG.md` 新增 `wheel_separation` 条目，并给 C 组条目追加"事后更正"
 - `HANDOFF.md` 14.6 补 D 组 + 几何警示，新增 14.7 重建基线待办
-- `docs/VERIFY_ODOM_SOURCE.md` 新增第九节（几何错误专章），**D-03 / D-04 待办作废**
+- `docs/operations/VERIFY_ODOM_SOURCE.md` 新增第九节（几何错误专章），**D-03 / D-04 待办作废**
 - 对比逻辑固化为 `scripts/amcl_compare.py`（避免反复粘贴长 heredoc 被终端破坏）
 - git 提交命令已给出（拆两个提交：代码修复 / 文档归档），**是否已执行请以 `git log --oneline -n 3` 为准**
 

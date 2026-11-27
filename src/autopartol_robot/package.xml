@@ -3,7 +3,7 @@
 <package format="3">
   <name>autopartol_robot</name>
   <version>0.0.0</version>
-  <description>基于 Nav2 的巡逻任务节点：航点循环、拍照、语音与 CSV 记录</description>
+  <description>基于 Nav2 的巡逻任务节点：航点列表逐点 goToPose 导航、拍照、语音与 CSV 记录</description>
   <maintainer email="2146145550@qq.com">robot</maintainer>
   <license>Apache-2.0</license>
 
