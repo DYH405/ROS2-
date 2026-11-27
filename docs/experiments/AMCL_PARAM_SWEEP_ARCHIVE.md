@@ -14,7 +14,7 @@
 
 ### 1.1 目的
 
-M3 阶段要对比「纯 `/odom`（A 组）」与「EKF 融合输出（B 组）」的定位误差。该对比成立的前提是 `/odom` 必须是**会漂的估计值**。`/odom` 数据源已于 2026-11-10 从 WORLD（直取世界位姿）切换为 ENCODER（编码器积分），A 组条件成立（详见 `docs/VERIFY_ODOM_SOURCE.md`）。
+M3 阶段要对比「纯 `/odom`（A 组）」与「EKF 融合输出（B 组）」的定位误差。该对比成立的前提是 `/odom` 必须是**会漂的估计值**。`/odom` 数据源已于 2026-11-10 从 WORLD（直取世界位姿）切换为 ENCODER（编码器积分），A 组条件成立（详见 `docs/operations/VERIFY_ODOM_SOURCE.md`）。
 
 在此前提下，本组实验要回答的是：**AMCL 的观测模型与运动模型参数，哪些与仿真实际状态不匹配，改动后定位精度是否真的改善。**
 
@@ -73,7 +73,7 @@ t=34.5  gt=(3.745,2.221)  amcl=(3.547,2.083)   误差 0.24    ← 更新了，�
 
 > 本节仅覆盖 A~D 四组（`wheel_separation 0.24`，yaw 指标失效）。几何修正后的 E/F/G 三组见 **第八节**，其 yaw 指标已恢复有效，**跨阶段比较请勿混用**。
 
-> **重要前提（2026-11-23 事后修正）**：A~D 四组运行时 `wheel_separation` 为 **0.24，而实际轮距 0.36**，导致 `/odom` 航向被系统性放大 1.5 倍。**这四组的 yaw 类指标全部失效，不得作为 AMCL 精度上报**；位置类指标不受影响（轮径自洽）。详见 4.5 与 [VERIFY_ODOM_SOURCE.md](file:///home/robot/ros2_ws/docs/VERIFY_ODOM_SOURCE.md) 第九节。
+> **重要前提（2026-11-23 事后修正）**：A~D 四组运行时 `wheel_separation` 为 **0.24，而实际轮距 0.36**，导致 `/odom` 航向被系统性放大 1.5 倍。**这四组的 yaw 类指标全部失效，不得作为 AMCL 精度上报**；位置类指标不受影响（轮径自洽）。详见 4.5 与 [VERIFY_ODOM_SOURCE.md](file:///home/robot/ros2_ws/docs/operations/VERIFY_ODOM_SOURCE.md) 第九节。
 
 ### 3.1 参数表（全部取自 `params_snapshot.txt` 的运行时生效值）
 
