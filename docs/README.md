@@ -7,3 +7,4 @@
 | [logs/日志.md](logs/日志.md) | 按日期记录的任务卡完成情况、当日结论与遗留问题 | 回溯某日做了什么、某任务卡为何未通过时 |
 | [archive/ROADMAP_FAULT_DETECTION_ARCHIVE.md](archive/ROADMAP_FAULT_DETECTION_ARCHIVE.md) | 原 P2–P5（故障检测与分级恢复）规划的归档，不驱动当前主线 | 想找回早期 P2–P5 规划、确认某方向为何搁置时 |
 | [archive/handoff/HANDOFF_SESSION_20261123.md](archive/handoff/HANDOFF_SESSION_20261123.md) | 一次性交接，仅服务 2026-11-22 ~ 11-23：M3 EKF 前置验证全过程、`wheel_separation` 0.24→0.36 修正、A~D 组 yaw 指标作废说明 | 想复原那两天为何改参数、E~G 组基线从何而来时 |
+| [archive/handoff/HANDOFF_SESSION_20261126.md](archive/handoff/HANDOFF_SESSION_20261126.md) | 一次性交接，仅服务 2026-11-25 ~ 11-26：仓库整理六阶段、docs 目录收拢、`HANDOFF.md` 现状段校正；记录 7 个 `package.xml` 已改未提交与 8 项待决策 | 想复原这轮为何只改文档、`package.xml` 改到哪一步、下一步先跑什么时 |
