@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>图像抓取节点：提供 capture_image 服务并保存图片</description>
   <maintainer email="2146145550@qq.com">robot</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>

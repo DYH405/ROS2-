@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>旁路节点：订阅 /odom 并发布对应 TF</description>
   <maintainer email="robot@todo.todo">robot</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>nav_msgs</depend>

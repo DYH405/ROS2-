@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>语音播报节点：提供 speech_text 服务，收到文本后调用 espeakng 播报</description>
   <maintainer email="2146145550@qq.com">robot</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
   <depend>autopartol_interfaces</depend>
