@@ -32,7 +32,7 @@ class PartolNode(BasicNavigator):
         # 重试机制
         self.declare_parameter('nav_retry_count', 2) # 导航重试次数
         self.declare_parameter('nav_fail_action', 'skip') # skip:跳过,stop:停止
-        self.declare_parameter('max_rounds', 3) # 最大循环次数
+        self.declare_parameter('max_rounds', 1) # 最大循环次数，默认值与 partol_config.yaml 保持一致，实际以 yaml/launch 为准
         self.declare_parameter('csv_log_path', '~/ros2_ws/experiment_logs/patrol_runs.csv') # 实验指标CSV路径
         self.nav_retry_count = self.get_parameter('nav_retry_count').value
         self.nav_fail_action = self.get_parameter('nav_fail_action').value
@@ -205,7 +205,11 @@ class PartolNode(BasicNavigator):
             self.get_logger().error('图片保存服务未就绪,重试20次失败')
             return
 
+        # 请求体为空:保存路径与位姿由服务端 image_capture_node 自己决定,
+        #   客户端再传一份就成了两份真相,落盘位姿还可能比请求前查到的旧。
         request = CaptureImage.Request() # 请求-无参数请求
+        # 用 call_async 不用 call():本节点没有独立 spin 线程,同步等待会堵住
+        #   nav_to_pose 里的 spin_once,服务端最坏约 5 s(5 次 TF 重试×1 s)。
         future = self.capture_client_.call_async(request)
 
         def record_done(future):
