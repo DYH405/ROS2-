@@ -3,7 +3,7 @@
 <package format="3">
   <name>odom_to_tf_pkg</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>旁路节点：订阅 /odom 并发布对应 TF</description>
   <maintainer email="robot@todo.todo">robot</maintainer>
   <license>TODO: License declaration</license>
 

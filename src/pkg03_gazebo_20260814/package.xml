@@ -3,7 +3,7 @@
 <package format="3">
   <name>pkg03_gazebo_20260814</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>Gazebo 仿真与 Nav2 启动入口：世界、URDF、参数、脚本</description>
   <maintainer email="2146145550@qq.com">dyh</maintainer>
   <license>MIT</license>
 

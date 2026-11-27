@@ -3,7 +3,7 @@
 <package format="3">
   <name>autopartol_interfaces</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>巡逻机器人自定义服务接口：拍照与语音</description>
   <maintainer email="2146145550@qq.com">robot</maintainer>
   <license>MIT</license>
 

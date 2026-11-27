@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_vision</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>图像抓取节点：提供 capture_image 服务并保存图片</description>
   <maintainer email="2146145550@qq.com">robot</maintainer>
   <license>TODO: License declaration</license>
 

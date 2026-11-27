@@ -3,7 +3,7 @@
 <package format="3">
   <name>robot_speech</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>语音播报节点：提供 speech_text 服务，收到文本后调用 espeakng 播报</description>
   <maintainer email="2146145550@qq.com">robot</maintainer>
   <license>TODO: License declaration</license>
 
