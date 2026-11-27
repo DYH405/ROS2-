@@ -19,7 +19,11 @@ ACTION_TIMEOUT=${ACTION_TIMEOUT:-120}
 PATROL_TIMEOUT=${PATROL_TIMEOUT:-900}
 READY_TOPICS=${READY_TOPICS:-"/scan /odom /cmd_vel"}
 
-PIDS=()
+GAZEBO_PID=
+NAV2_PID=
+PATROL_PID=
+CAPTURE_PID=
+TEARDOWN_DONE=0
 
 log() { echo "[INFO] $*"; }
 fail() { # $1 步骤 $2 原因 $3 退出码
@@ -27,34 +31,68 @@ fail() { # $1 步骤 $2 原因 $3 退出码
   exit "$3"
 }
 
-cleanup() {
-  pkill -15 -f "nav2_bringup" 2>/dev/null
-  sleep 1
-  pkill -9 -f "nav2_container" 2>/dev/null
-  # D11 修正：区分两个阶段，避免并发时按名字全局杀误伤别的实例。
-  #   PIDS 为空 = S1 开跑前的「清残留」，此时本脚本还没启动任何节点，
-  #              按名字全局清扫是安全的（用于清掉上一轮被强杀留下的孤儿）。
-  #   PIDS 非空 = EXIT 收尾，只杀本轮 PID 派生出的子孙进程；
-  #              原写法 pkill -9 -f partol_node 在批 1c 双实例并发时，
-  #              打死了对方正在跑的巡逻节点，patrol_runs 因此出现 0/10 的畸形行。
-  if [ ${#PIDS[@]} -eq 0 ]; then
-    pkill -9 -f "partol_node" 2>/dev/null
-    pkill -9 -f "speech_node" 2>/dev/null
+topics_present() { # $1 话题名（精确匹配）
+  ros2 topic list 2>/dev/null | grep -qx -- "$1"
+}
+
+collect_tree() { # 递归打印 PID 及其所有子孙
+  local p=$1 c
+  echo "$p"
+  for c in $(pgrep -P "$p" 2>/dev/null); do
+    collect_tree "$c"
+  done
+}
+
+same_group() { # 记录的 PID 是否自成会话/进程组（setsid 生效）
+  local pid=$1 pgid sid
+  pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+  sid=$(ps -o sid= -p "$pid" 2>/dev/null | tr -d ' ')
+  [ -n "$pgid" ] && [ "$pgid" = "$pid" ] && [ "$sid" = "$pid" ]
+}
+
+signal_pid() { # $1 PID $2 TERM|KILL
+  local pid=$1 sig=$2 p
+  [ -n "$pid" ] || return 0
+  # 同组：按进程组整组发；不同组：退化为按进程树逐个发
+  if same_group "$pid" || ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx -- "$pid"; then
+    kill -"$sig" -- "-$pid" 2>/dev/null
   else
-    for pid in ${PIDS[@]+"${PIDS[@]}"}; do
-      pkill -9 -P "$pid" 2>/dev/null    # 先杀直接子进程（partol_node / speech_node 由 launch 派生）
+    for p in $(collect_tree "$pid"); do
+      kill -"$sig" "$p" 2>/dev/null
     done
   fi
-  for pid in ${PIDS[@]+"${PIDS[@]}"}; do
-    kill -9 "$pid" 2>/dev/null
+}
+
+wait_topics_gone() { # 每 0.5 s 轮询，最多 20 s
+  local deadline=$((SECONDS + 20))
+  while [ $SECONDS -lt $deadline ]; do
+    if ! topics_present /scan && ! topics_present /amcl_pose; then
+      return 0
+    fi
+    sleep 0.5
   done
-  pkill -9 -f gzserver 2>/dev/null
-  pkill -9 -f gzclient 2>/dev/null
-  pkill -9 -f capture_truth_pose.py 2>/dev/null
+  return 1
+}
+
+teardown() {
+  [ "$TEARDOWN_DONE" -eq 1 ] && return 0
+  TEARDOWN_DONE=1
+  trap - EXIT INT TERM
+  log "teardown: TERM patrol -> nav2 -> gazebo"
+  signal_pid "$PATROL_PID" TERM
+  signal_pid "$NAV2_PID" TERM
+  signal_pid "$GAZEBO_PID" TERM
+  signal_pid "$CAPTURE_PID" TERM
+  wait_topics_gone || log "teardown: /scan 或 /amcl_pose 20s 内未消失，转 KILL"
+  for pid in "$PATROL_PID" "$NAV2_PID" "$GAZEBO_PID" "$CAPTURE_PID"; do
+    signal_pid "$pid" KILL
+  done
   rm -rf /dev/shm/gz* /dev/shm/rmw* 2>/dev/null
   log "cleanup done"
 }
-trap cleanup EXIT INT TERM
+trap teardown EXIT
+trap 'teardown; exit 130' INT
+trap 'teardown; exit 143' TERM
 
 wait_for_topic() { # $1 话题 $2 超时秒
   local topic=$1 timeout=${2:-60} elapsed=0
@@ -86,10 +124,6 @@ csv_rows() { # 统计行数，文件不存在按0
   if [ -f "$1" ]; then wc -l < "$1" | tr -d ' '; else echo 0; fi
 }
 
-# S1 清理残留
-cleanup
-sleep 1
-
 # S2 启动仿真与导航
 cd "$WS" || fail S2 "workspace_missing" 2
 set +u # setup.bash 内部裸引用 COLCON_TRACE，set -u 下会直接退出
@@ -103,17 +137,22 @@ INST_NODE=$WS/install/autopartol_robot/lib/python3.10/site-packages/autopartol_r
 grep -q "gazebo_ros_state" "$INST_WORLD" || fail S2 "install_stale:world_plugin_missing" 2
 grep -q "need_nl" "$INST_NODE" || fail S2 "install_stale:newline_guard_missing" 2
 
+# 前置检查：不按名字全局杀；已有仿真图说明有残留/别的实例，直接退出
+if topics_present /scan || topics_present /amcl_pose; then
+  fail S2 "stale_ros_graph:scan_or_amcl_present" 5
+fi
+
 log "launching gazebo"
-ros2 launch pkg03_gazebo_20260814 gazebo_test.launch.py > "$LOG_DIR/gazebo.log" 2>&1 &
-PIDS+=($!)
+setsid ros2 launch pkg03_gazebo_20260814 gazebo_test.launch.py > "$LOG_DIR/gazebo.log" 2>&1 &
+GAZEBO_PID=$!
 sleep 3
 
 log "launching nav2"
-ros2 launch nav2_bringup bringup_launch.py \
+setsid ros2 launch nav2_bringup bringup_launch.py \
   use_sim_time:=True \
   map:="$MAP" \
   params_file:="$NAV2_PARAMS" > "$LOG_DIR/nav2.log" 2>&1 &
-PIDS+=($!)
+NAV2_PID=$!
 
 # S3 就绪等待
 for topic in $READY_TOPICS; do
@@ -124,27 +163,36 @@ wait_for_action navigate_to_pose "$ACTION_TIMEOUT" || fail S3 "action_missing:na
 # S4 先起末点采集（缓存/amcl_pose），再跑一轮巡逻
 rows_before=$(csv_rows "$CSV")
 log "csv rows before patrol: $rows_before"
-python3 "$CAPTURE" --watch --json "$LOG_DIR/pose_cache.json" > "$LOG_DIR/pose_watch.log" 2>&1 &
-PIDS+=($!)
+setsid python3 "$CAPTURE" --watch --json "$LOG_DIR/pose_cache.json" > "$LOG_DIR/pose_watch.log" 2>&1 &
+CAPTURE_PID=$!
 sleep 2
 
 log "launching patrol"
-ros2 launch autopartol_robot autopartol.launch.py > "$LOG_DIR/patrol.log" 2>&1 &
+setsid ros2 launch autopartol_robot autopartol.launch.py > "$LOG_DIR/patrol.log" 2>&1 &
 PATROL_PID=$!
-PIDS+=($PATROL_PID)
 
-# S5 等待本轮落盘
+# S5 等待巡逻结束：以日志终句为准（在 CSV 写入之后、while 循环之外，max_rounds 改几都成立）
+PATROL_LOG=$LOG_DIR/patrol.log
+patrol_done=0
 deadline=$((SECONDS + PATROL_TIMEOUT))
 while [ $SECONDS -lt $deadline ]; do
-  rows_now=$(csv_rows "$CSV")
-  if [ "$rows_now" -gt "$rows_before" ]; then
-    log "run recorded: rows $rows_before -> $rows_now"
+  if grep -q "巡逻结束，全程统计" "$PATROL_LOG" 2>/dev/null; then
+    patrol_done=1
     break
   fi
-  kill -0 "$PATROL_PID" 2>/dev/null || fail S5 "patrol_exited_early" 6
-  sleep 5
+  if ! kill -0 "$PATROL_PID" 2>/dev/null; then
+    sleep 1
+    grep -q "巡逻结束，全程统计" "$PATROL_LOG" 2>/dev/null && patrol_done=1
+    [ "$patrol_done" -eq 1 ] || fail S5 "patrol_exited_early" 6
+    break
+  fi
+  sleep 2
 done
-[ "$(csv_rows "$CSV")" -gt "$rows_before" ] || fail S5 "patrol_timeout:${PATROL_TIMEOUT}s" 6
+[ "$patrol_done" -eq 1 ] || fail S5 "patrol_timeout:${PATROL_TIMEOUT}s" 6
+# CSV 只做辅助校验，不再决定何时退出
+rows_now=$(csv_rows "$CSV")
+[ "$rows_now" -gt "$rows_before" ] || fail S5 "csv_no_new_row:rows=$rows_now" 6
+log "patrol finished: rows $rows_before -> $rows_now"
 
 # S6 采集真值末点与AMCL末点（必须在关仿真前）
 log "capturing truth pose"
