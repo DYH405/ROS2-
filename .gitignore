@@ -7,6 +7,7 @@ __pycache__/
 *.pyo
 .vscode/
 .marscode/
+.trae/
 .DS_Store
 *.swp
 *~
