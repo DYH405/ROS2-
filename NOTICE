@@ -1,0 +1,20 @@
+本仓库自研部分按 Apache License 2.0 授权（见 LICENSE）；各包 package.xml 另有声明的，以包内声明为准。
+
+Copyright 2026 DYH405
+
+以下第三方组件各自从其原许可，不并入本仓库的 Apache-2.0：
+
+1. src/rplidar_ros
+   名称：rplidar_ros（Slamtec RPLIDAR ROS2 驱动，v2.1.4）
+   上游：Slamtec
+   维护者：Wang DeYou <deyou.wang@slamtec.com>
+   作者：Slamtec ROS Maintainer <ros@slamtec.com>
+   许可：BSD（见 src/rplidar_ros/LICENSE 与 src/rplidar_ros/package.xml）
+
+2. src/wpr_simulation2
+   名称：wpr_simulation2（6-robot 机器人 Gazebo 仿真包）
+   上游：http://www.6-robot.com
+   许可：GPLv3（该目录无 LICENSE 文件，许可仅声明于 src/wpr_simulation2/package.xml）
+
+分发本仓库时请保留上述目录及其许可声明。若将本仓库整体打包分发（含上述 GPLv3 目录），
+该分发包中的 GPLv3 部分仍适用 GPLv3；仅使用自研部分时不受 GPLv3 约束。

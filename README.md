@@ -52,6 +52,9 @@ ros2 launch autopartol_robot autopartol.launch.py                     # 开始�
 
 ## 许可
 
+自研部分：Apache License 2.0，全文见 [LICENSE](LICENSE)，第三方组件声明见 [NOTICE](NOTICE)。
+各包 `package.xml` 另有 `<license>` 声明的，以包内声明为准。
+
 第三方包：
 
 | 包 | 许可 | LICENSE |
