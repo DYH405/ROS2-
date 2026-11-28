@@ -25,11 +25,13 @@ GAZEBO_PID=
 NAV2_PID=
 PATROL_PID=
 CAPTURE_PID=
+RVIZ_PID=
 TEARDOWN_DONE=0
 TEARDOWN_DIRTY= # 收摊复检结果，非空表示仍有残留，S7 据此返回非 0
 RECOVER=${RECOVER:-0} # 1=发现本工作区残留时自动清理后再跑；0=只报告并退出（默认，避免误清手动实例）
 CLEAN_ONLY=0 # 1=只做清理+复检后退出，不启动任何节点（--clean-only 触发）
-[ "${1:-}" = "--clean-only" ] && CLEAN_ONLY=1 # 显式恢复入口，只清不跑
+RVIZ=${RVIZ:-1} # 1=启动 RViz2 可视化（默认，与 gazebo.sh 一致）；0=不启动
+RVIZ_WARMUP=${RVIZ_WARMUP:-15} # 起巡逻前等 RViz 渲染就绪的上限秒数，见 S4 预热段注释
 
 log() { echo "[INFO] $*"; }
 fail() { # $1 步骤 $2 原因 $3 退出码
@@ -37,9 +39,20 @@ fail() { # $1 步骤 $2 原因 $3 退出码
   exit "$3"
 }
 
+log "log dir: $LOG_DIR" # 一开始就给出日志位置，便于另开终端 tail -f 观察进度
+
 topics_present() { # $1 话题名（精确匹配）
   ros2 topic list 2>/dev/null | grep -qx -- "$1"
 }
+
+# 参数解析：--no-rviz 沿用 gazebo.sh/gazebo_ekf.sh 既有约定；--clean-only 为恢复入口
+for arg in "$@"; do
+  case $arg in
+    --no-rviz) RVIZ=0 ;; # 显式关闭可视化
+    --clean-only) CLEAN_ONLY=1 ;; # 只清不跑
+    *) log "warning: 未知参数已忽略: $arg" ;; # 不致命，仅提示，避免拼错参数被静默吞掉
+  esac
+done
 
 topic_has_publisher() { # $1 话题名；仅订阅者也会让话题出现在列表，故按发布者计数判定
   local n
@@ -75,8 +88,43 @@ signal_pid() { # $1 PID $2 TERM|KILL
   fi
 }
 
-wait_topics_gone() { # $1 超时秒，默认 20；每 0.5 s 轮询
-  local timeout=${1:-20} deadline=$((SECONDS + timeout))
+wait_topics_gone() { # $1 首轮超时秒(默认 20) $2 二次确认秒(默认 8，0=不做二次确认)
+  # 必须分行赋值：local 同一行多个赋值时，后面 $((...)) 展开发生在前面变量生效之前，
+  # 配合 set -u 会报「timeout: 未绑定的变量」
+  local timeout=${1:-20}
+  local confirm=${2:-8}
+  local deadline
+  deadline=$((SECONDS + timeout))
+  while [ $SECONDS -lt $deadline ]; do
+    if ! topic_has_publisher /scan && ! topic_has_publisher /amcl_pose; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  # 首轮超时不等于脏，必须二次确认后才允许判脏。[2026-11-28 A 组] 依据连续两次实跑实测：
+  #   run_one_20261128_004741 收摊报 DIRTY(topics_published) 退出 8；
+  #   run_one_20261128_005242 开跑时 S2 的 stale 检查（同样调 topic_has_publisher）
+  #   没有报 scan_or_amcl_published，收摊复检也 clean。同一套环境在约 30 s 内从
+  #   「有发布者」变成「无发布者」，中间没有任何进程被重新拉起 —— 只能是缓存剔除，不是残留。
+  # 机制（为什么不采信首轮结果）：
+  #   1) topic_has_publisher 读的是 ros2 daemon 的图缓存。进程被 KILL 后，DDS 参与者要等
+  #      租约到期才会从缓存里剔除，这段时间 ros2 topic info 仍报 Publisher count >= 1；
+  #   2) 每次 ros2 topic info 都要新起一个 CLI 进程（实测约 1 s），首轮 5 s 的预算
+  #      实际只采到 2~3 个样本，采样窗口比缓存剔除时间还短。
+  # 二次确认的做法：ros2 daemon stop 丢掉缓存，下一次 ros2 调用会自启一个空图的新 daemon，
+  #   此时再报发布者就只可能是真的还有进程在发。
+  # 为什么不是 --no-daemon：Humble 的 ros2topic 动词没有该选项，只能停 daemon 重建。
+  # 为什么不是把首轮超时从 5 s 加长到 20 s：剔除时间取决于租约，不可控；加长只是把误报
+  #   挪后，遇到租约更长仍误报，且每次收摊都白等。
+  # 代价（必须知道的副作用）：确认窗口内新 daemon 若还没建完图，可能把真实发布者漏判成 0。
+  #   兜底在 S2：下一次开跑先查 scan_or_amcl_published，那时 daemon 已热，真实残留照样被拦住。
+  [ "$confirm" -gt 0 ] || return 1
+  ros2 daemon stop >/dev/null 2>&1
+  sleep 1
+  # 预热一次：这条调用会等新 daemon 起来并建完首轮图。缺这一步时，确认窗第一轮很可能
+  #   拿到「还没发现任何参与者」的空图，把真实发布者读成 0，等于用假阴性换掉了假阳性。
+  ros2 topic list >/dev/null 2>&1
+  deadline=$((SECONDS + confirm))
   while [ $SECONDS -lt $deadline ]; do
     if ! topic_has_publisher /scan && ! topic_has_publisher /amcl_pose; then
       return 0
@@ -88,11 +136,14 @@ wait_topics_gone() { # $1 超时秒，默认 20；每 0.5 s 轮询
 
 wait_groups_gone() { # $1 超时秒，默认 10；四个进程组内均无存活成员则返回 0
   # 僵尸进程不算存活：其 pgid 仍挂在 ps 里，但父进程(本脚本)退出后即被回收，不构成残留
-  local timeout=${1:-10} deadline=$((SECONDS + timeout)) alive pid pgids
+  # 分行赋值原因同 wait_topics_gone，避免 set -u 下未绑定变量
+  local timeout=${1:-10}
+  local deadline=$((SECONDS + timeout))
+  local alive pid pgids
   while [ $SECONDS -lt $deadline ]; do
     pgids=$(ps -eo pgid=,stat= 2>/dev/null | awk '$2 !~ /Z/ {print $1}' | tr -d ' ')
     alive=0
-    for pid in "$PATROL_PID" "$NAV2_PID" "$GAZEBO_PID" "$CAPTURE_PID"; do
+    for pid in "$RVIZ_PID" "$PATROL_PID" "$NAV2_PID" "$GAZEBO_PID" "$CAPTURE_PID"; do
       [ -n "$pid" ] || continue
       printf '%s\n' "$pgids" | grep -qx -- "$pid" && alive=1
     done
@@ -105,10 +156,18 @@ wait_groups_gone() { # $1 超时秒，默认 10；四个进程组内均无存活
 teardown_verify() { # 收摊复检：进程组、话题、共享内存三项都干净才算真收干净
   local dirty=""
   # 未启动过任何进程（如早期 fail）时无需复检，避免把外部残留实例算到本次头上
-  if [ -n "$GAZEBO_PID$NAV2_PID$PATROL_PID$CAPTURE_PID" ]; then
+  if [ -n "$GAZEBO_PID$NAV2_PID$PATROL_PID$CAPTURE_PID$RVIZ_PID" ]; then
     wait_groups_gone 10 || dirty="${dirty}${dirty:+,}proc_group_alive"
-    # KILL 后再给 ROS graph 一点更新时间，避免 daemon 缓存未刷新造成误报
-    wait_topics_gone 5 || dirty="${dirty}${dirty:+,}topics_published"
+    # 进程组还在时跳过话题判定：发布者必然还在，判出来只是把同一个根因写成两个脏项，
+    #   让人误以为有两个独立故障，实际处置动作只有「再杀一次」这一个。
+    #   进程组已清空才查话题，此时仍报发布者才是真需要人看的情况（别的实例占了同一组话题）。
+    # 首轮预算 12 s 而不是 5 s 的依据：每次 ros2 topic info 新起 CLI 约 1 s，
+    #   wait_topics_gone 每轮要查 /scan 与 /amcl_pose 两个话题，5 s 只够 2~3 个样本；
+    #   12 s 约 6 个样本，覆盖 KILL 后正常退出（非缓存）的那一小段抖动。
+    #   超出后不再延长首轮，改由 wait_topics_gone 内部的 daemon 重建做二次确认，见该函数注释。
+    if [ -z "$dirty" ]; then
+      wait_topics_gone 12 || dirty="${dirty}${dirty:+,}topics_published"
+    fi
     compgen -G "/dev/shm/gz*" >/dev/null 2>&1 && dirty="${dirty}${dirty:+,}shm_gz"
     compgen -G "/dev/shm/rmw*" >/dev/null 2>&1 && dirty="${dirty}${dirty:+,}shm_rmw"
   fi
@@ -164,7 +223,10 @@ recover_stale() { # 清理本工作区残留并复检；成功返回 0
     sleep 0.5
   done
   [ -z "$(residual_pids)" ] || return 1
-  wait_topics_gone 5 || return 1
+  # 首轮 12 s 与 teardown_verify 取同一个值：这里的调用场景（上一次被硬杀、daemon 缓存里
+  #   还留着已死参与者）与收摊复检完全同类，预算取小会让「连着跑第二次」在清理环节假失败。
+  #   超时后由 wait_topics_gone 内部停 daemon 重建图再确认，见该函数注释。
+  wait_topics_gone 12 || return 1
   return 0
 }
 
@@ -172,13 +234,23 @@ teardown() {
   [ "$TEARDOWN_DONE" -eq 1 ] && return 0
   TEARDOWN_DONE=1
   trap - EXIT INT TERM
-  log "teardown: TERM patrol -> nav2 -> gazebo"
+  # 本脚本一个进程都没启动（如 --clean-only 正常结束、S2 早期失败）：无物可收，直接返回，
+  # 避免打出误导性的 TERM 日志，也避免把外部实例误算到本次
+  if [ -z "$GAZEBO_PID$NAV2_PID$PATROL_PID$CAPTURE_PID$RVIZ_PID" ]; then
+    log "teardown: nothing started by this run, skip"
+    return 0
+  fi
+  log "teardown: TERM rviz -> patrol -> nav2 -> gazebo"
+  signal_pid "$RVIZ_PID" TERM # 先关可视化：避免它订阅着正在消亡的话题刷一堆错误
   signal_pid "$PATROL_PID" TERM
   signal_pid "$NAV2_PID" TERM
   signal_pid "$GAZEBO_PID" TERM
   signal_pid "$CAPTURE_PID" TERM
-  wait_topics_gone || log "teardown: TERM 后 20s 内话题未消失，转 KILL"
-  for pid in "$PATROL_PID" "$NAV2_PID" "$GAZEBO_PID" "$CAPTURE_PID"; do
+  # 这里刻意保留二次确认（默认 8 s）：只有「停 daemon 重建图后仍报发布者」才打转 KILL 日志，
+  #   否则这句话会把「缓存还没剔除」误写成「TERM 没生效」，掩盖真实原因。
+  # 代价：TERM 真没生效时多花约 10 s（2 s 停 daemon + 8 s 确认窗），只在慢路径上出现。
+  wait_topics_gone || log "teardown: TERM 后 20s + daemon 重建确认仍报发布者，转 KILL"
+  for pid in "$RVIZ_PID" "$PATROL_PID" "$NAV2_PID" "$GAZEBO_PID" "$CAPTURE_PID"; do
     signal_pid "$pid" KILL
   done
   rm -rf /dev/shm/gz* /dev/shm/rmw* 2>/dev/null
@@ -273,6 +345,38 @@ setsid ros2 launch nav2_bringup bringup_launch.py \
   map:="$MAP" \
   params_file:="$NAV2_PARAMS" > "$LOG_DIR/nav2.log" 2>&1 &
 NAV2_PID=$!
+sleep 2.5 # 对齐 gazebo.sh：等 Nav2 内部组件把 /scan /map /tf 发布起来，RViz 才有东西可订阅
+
+# S2.5 启动可视化：刻意排在 S3 就绪检查之前，顺序与 gazebo.sh 一致
+#   （gazebo.sh 为 gazebo -> sleep3 -> nav2 -> sleep2.5 -> rviz -> 最后才起巡逻）
+# 为什么必须提前，而不是放在巡逻启动前几秒：
+#   rviz2 启动瞬间要做三件重活——编译 GLSL 着色器、上传 202x161 地图 swatch、填满 TF 缓存，
+#   CPU 会有一个明显峰值。若这个峰值正好压在 patrol 的 init_robot_pose 上
+#   （waitUntilNav2Active 要连续查 TF 与 costmap），实测会让 scan/TF 消息积压超过
+#   TF 缓存 10 s 窗口，costmap 整帧丢弃（日志刷 "timestamp earlier than all the data
+#   in the transform cache"），巡逻永久等不到激活，表现为「半天不开始巡航」。
+#   提前到 S3 之前，让 RViz 的初始化与 S3 的就绪等待重叠，巡逻启动时它已稳定。
+if [ "$RVIZ" -eq 1 ]; then
+  if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    log "rviz: 无图形环境(DISPLAY 未设置)，跳过可视化；如需远程请看日志或改用 RViz 远程连接"
+  else
+    log "launching rviz2"
+    setsid ros2 run rviz2 rviz2 \
+      -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz \
+      --ros-args -p use_sim_time:=true > "$LOG_DIR/rviz.log" 2>&1 &
+    RVIZ_PID=$!
+    sleep 2.5
+    # 启动失败要立刻说出来，而不是留一个死进程让人以为在看画面
+    if kill -0 "$RVIZ_PID" 2>/dev/null; then
+      log "rviz2 up: pid=$RVIZ_PID"
+    else
+      log "rviz2 exited early, see $LOG_DIR/rviz.log"
+      RVIZ_PID=
+    fi
+  fi
+else
+  log "rviz: 已按 --no-rviz 关闭可视化"
+fi
 
 # S3 就绪等待
 for topic in $READY_TOPICS; do
@@ -289,6 +393,25 @@ log "images before patrol: $(printf '%s\n' "$imgs_before" | grep -c '\.png$' || 
 setsid python3 "$CAPTURE" --watch --json "$LOG_DIR/pose_cache.json" > "$LOG_DIR/pose_watch.log" 2>&1 &
 CAPTURE_PID=$!
 sleep 2
+
+# S4.5 RViz 预热确认：等主地图渲染完成再起巡逻
+# 判据用日志探针而非固定 sleep：rviz.log 出现 "Trying to create a map" 说明主地图 swatch
+#   已上传，GLSL 编译与地图加载这两个 CPU 峰值已过；此时起巡逻不会与它抢资源。
+# 为什么设上限而非无限等：RViz 慢不该阻断实验，超时仍继续，只记录告警便于事后归因。
+# 为什么上限取 15 s：实测 RViz 从启动到打出该行约 2~6 s（含 GLSL 报错重试），
+#   15 s 留 2 倍余量；再长说明 RViz 异常，继续等也无意义。
+if [ -n "$RVIZ_PID" ]; then
+  rviz_deadline=$((SECONDS + RVIZ_WARMUP))
+  while [ $SECONDS -lt $rviz_deadline ]; do
+    grep -q "Trying to create a map" "$LOG_DIR/rviz.log" 2>/dev/null && break
+    sleep 0.5
+  done
+  if grep -q "Trying to create a map" "$LOG_DIR/rviz.log" 2>/dev/null; then
+    log "rviz warmup done: 主地图已渲染"
+  else
+    log "rviz warmup timeout ${RVIZ_WARMUP}s: 地图未渲染完成，继续跑（RViz 慢不应阻断实验）"
+  fi
+fi
 
 log "launching patrol (rounds=$ROUNDS)"
 setsid ros2 launch autopartol_robot autopartol.launch.py max_rounds:="$ROUNDS" > "$LOG_DIR/patrol.log" 2>&1 &
