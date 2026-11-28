@@ -11,7 +11,7 @@
 # 无参数时行为与 run.sh 完全相同。
 # =============================================================================
 
-GAZEBO_SH_PATH=~/ros2_ws/src/pkg03_gazebo_20260814/scripts/gazebo_ekf.sh
+GAZEBO_SH_PATH=~/ros2_ws/src/patrol_simulation/scripts/gazebo_ekf.sh
 
 cleanup() {
     echo ""
@@ -34,7 +34,7 @@ sleep 10
 
 echo "第三步：启动巡航..."
 source ~/ros2_ws/install/setup.bash
-ros2 launch autopartol_robot autopartol.launch.py
+ros2 launch patrol_mission patrol.launch.py
 
 echo "巡航已结束，清理所有进程..."
 cleanup

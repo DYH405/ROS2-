@@ -5,8 +5,8 @@ set -u
 WS=/home/robot/ros2_ws
 CSV=$WS/experiment_logs/patrol_runs.csv
 TRUTH_CSV=$WS/experiment_logs/truth_last_pose.csv
-MAP=$WS/src/pkg03_gazebo_20260814/maps/my_map.yaml
-NAV2_PARAMS=$WS/src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml
+MAP=$WS/src/patrol_simulation/maps/my_map.yaml
+NAV2_PARAMS=$WS/src/patrol_simulation/config/nav2_params_hybrid.yaml
 CAPTURE=$WS/scripts/capture_truth_pose.py
 
 RUN_TS=$(date +%Y%m%d_%H%M%S)
@@ -183,7 +183,7 @@ teardown_verify() { # 收摊复检：进程组、话题、共享内存三项都�
 
 residual_pids() { # 只认命令行含本工作区指纹的进程，避免误杀别的工作区实例
   # 指纹取 world 路径/params 路径/包名：均为本仓库独有，比纯进程名(gzserver)精确
-  pgrep -f -- "robocup_home\.world|nav2_bringup|autopartol_robot|image_capture_node|partol_node|capture_truth_pose" 2>/dev/null \
+  pgrep -f -- "robocup_home\.world|nav2_bringup|patrol_mission|image_capture_node|patrol_node|capture_truth_pose" 2>/dev/null \
     | grep -vx -- "$$" || true # 排除脚本自身，防匹配到自己的命令行
 }
 
@@ -299,13 +299,13 @@ set -u
 [ -f "$MAP" ] || fail S2 "map_missing:$MAP" 2
 [ -f "$NAV2_PARAMS" ] || fail S2 "nav2_params_missing:$NAV2_PARAMS" 2
 [ -f "$CAPTURE" ] || fail S2 "capture_script_missing:$CAPTURE" 2
-INST_WORLD=$WS/install/pkg03_gazebo_20260814/share/pkg03_gazebo_20260814/worlds/robocup_home.world
+INST_WORLD=$WS/install/patrol_simulation/share/patrol_simulation/worlds/robocup_home.world
 grep -q "gazebo_ros_state" "$INST_WORLD" || fail S2 "install_stale:world_plugin_missing" 2
 # Python 包在 --symlink-install 下不落实体文件（只有 egg-link 指向 build/），
 # 故按运行时真实导入路径解析，取不到再兜底到源码目录
-INST_NODE=$(python3 -c "import autopartol_robot,os;print(os.path.join(os.path.dirname(autopartol_robot.__file__),'partol_node.py'))" 2>/dev/null)
-[ -n "$INST_NODE" ] && [ -f "$INST_NODE" ] || INST_NODE=$WS/src/autopartol_robot/autopartol_robot/partol_node.py
-log "partol_node source: $INST_NODE"
+INST_NODE=$(python3 -c "import patrol_mission,os;print(os.path.join(os.path.dirname(patrol_mission.__file__),'patrol_node.py'))" 2>/dev/null)
+[ -n "$INST_NODE" ] && [ -f "$INST_NODE" ] || INST_NODE=$WS/src/patrol_mission/patrol_mission/patrol_node.py
+log "patrol_node source: $INST_NODE"
 grep -q "need_nl" "$INST_NODE" || fail S2 "install_stale:newline_guard_missing" 2
 
 # 前置检查：已有发布者说明有残留或别的实例
@@ -335,7 +335,7 @@ if [ "$CLEAN_ONLY" -eq 1 ]; then # 仅清理模式：已确认无残留，不启
 fi
 
 log "launching gazebo"
-setsid ros2 launch pkg03_gazebo_20260814 gazebo_test.launch.py > "$LOG_DIR/gazebo.log" 2>&1 &
+setsid ros2 launch patrol_simulation gazebo_test.launch.py > "$LOG_DIR/gazebo.log" 2>&1 &
 GAZEBO_PID=$!
 sleep 3
 
@@ -414,7 +414,7 @@ if [ -n "$RVIZ_PID" ]; then
 fi
 
 log "launching patrol (rounds=$ROUNDS)"
-setsid ros2 launch autopartol_robot autopartol.launch.py max_rounds:="$ROUNDS" > "$LOG_DIR/patrol.log" 2>&1 &
+setsid ros2 launch patrol_mission patrol.launch.py max_rounds:="$ROUNDS" > "$LOG_DIR/patrol.log" 2>&1 &
 PATROL_PID=$!
 
 # S5 等待巡逻结束：以日志终句为准（在 CSV 写入之后、while 循环之外，max_rounds 改几都成立）

@@ -12,7 +12,7 @@
 #   5) 订阅 /behavior_tree_log -> bt_log.txt
 #      —— 把 "Running Spin / Backing Up / Clearing costmap" 这类恢复行为
 #         从终端文字变成可 grep 的记录，避免只靠肉眼
-#   6) ros2 launch autopartol_robot autopartol.launch.py 启动真实巡航节点
+#   6) ros2 launch patrol_mission patrol.launch.py 启动真实巡航节点
 #      —— 与批量实验完全同一条链路：10 个固定航点、单轮、失败重试 2 次，
 #         不做任何自造的简化，保证本轮数据与既有 patrol_runs 可比
 #   7) 巡逻结束后把新增的 patrol_runs 行抽到本轮目录，并把共享 CSV 还原
@@ -44,9 +44,9 @@ set +u
 [ -f "$WS/install/setup.bash" ] && source "$WS/install/setup.bash"
 set -u
 
-GAZEBO_SH=$WS/src/pkg03_gazebo_20260814/scripts/gazebo.sh
+GAZEBO_SH=$WS/src/patrol_simulation/scripts/gazebo.sh
 CAPTURE=$WS/scripts/capture_truth_pose.py
-NAV2_PARAMS=$WS/src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml
+NAV2_PARAMS=$WS/src/patrol_simulation/config/nav2_params_hybrid.yaml
 
 TAG=${TAG:-manual}                      # 本轮标签，写进目录名，用于区分参数组
 SAMPLE_PERIOD=${SAMPLE_PERIOD:-0.5}     # 采样周期(s)
@@ -337,14 +337,14 @@ BT_PID=$!
 sleep 2
 
 # ---------- S6 启动真实巡航（与批量实验同一条链路）----------
-# partol_node 继承 BasicNavigator：自己 setInitialPose(0,0,0) + waitUntilNav2Active，
-# 然后按 partol_config.yaml 的 10 个航点走一轮（max_rounds: 1），
+# patrol_node 继承 BasicNavigator：自己 setInitialPose(0,0,0) + waitUntilNav2Active，
+# 然后按 patrol_config.yaml 的 10 个航点走一轮（max_rounds: 1），
 # 每点导航超时 60 s、失败重试 nav_retry_count=2 次，
 # 跑完把一行汇总写进 patrol_runs.csv 后自行退出。
 # 注意：不要在这里再发 setInitialPose，两处同时设初始位姿会让 AMCL 粒子重新撒，
 #       前半段的收敛过程被抹掉，轨迹数据就不可比了。
-log "[S6] 启动巡航节点 ros2 launch autopartol_robot autopartol.launch.py"
-ros2 launch autopartol_robot autopartol.launch.py 9>&- > "$RUN_DIR/patrol.log" 2>&1 &
+log "[S6] 启动巡航节点 ros2 launch patrol_mission patrol.launch.py"
+ros2 launch patrol_mission patrol.launch.py 9>&- > "$RUN_DIR/patrol.log" 2>&1 &
 PATROL_PID=$!
 sleep 3
 
