@@ -13,6 +13,19 @@ __pycache__/
 *~
 .git_broken_backup
 img_*.png
-experiment_logs/
+# experiment_logs 白名单：只跟踪权威 CSV，不跟踪每次实跑的日志目录。[2026-11-28 归档组]
+#   为什么必须写成 experiment_logs/* 而不是 experiment_logs/：Git 的再包含规则是
+#     「父目录一旦被排除，其下的文件就无法再被包含」。写成目录形式 experiment_logs/ 时
+#     它排除的是整个目录，后一行 !experiment_logs/*.csv 会静默失效——git add 跳过全部
+#     CSV 且不报任何错。改成通配形式后排除的是「目录下的每个条目」，目录本身不被排除，
+#     再包含规则才能生效。实测对照：目录形式下 git status --short experiment_logs 输出 0 行。
+#   为什么不把整个目录取出：该目录共 52 MB，其中 34 MB 来自单次实跑日志
+#     run_one_20261107_160101，其余 50 个 run_one_* 每次 0.3~1.6 MB。全部纳入会让仓库
+#     体积随实验次数线性膨胀；Git 保存历史快照，删除文件不会缩小仓库，只能重写历史，
+#     而已推送过的远端会因此失效。日志可重跑再生，CSV 不可再生。
+#   代价：run_one_* 与 amcl_test 只存在于本机与共享文件夹，不在版本控制内，删了就没有备份。
+#   若将来确实需要归档日志，应另建独立仓库或对象存储，不要塞进本仓库。
+experiment_logs/*
+!experiment_logs/*.csv
 /archive/
 tmp/
