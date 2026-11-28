@@ -1,8 +1,10 @@
 # ROS2 仿真导航项目 — 交接文档
 
-> 更新时间：2026-11-23
+> 更新时间：2026-11-28
 > 2026-11-25 按当前 `master` 校正：Nav2 参数入口、IMU/EKF 链路状态、rosbag 话题数
-> 当前阶段：M3 EKF 前置 — AMCL 参数对照收尾 + 差速插件几何修正
+> 2026-11-27 补第十五节（许可统一、实验脚本实跑修复、单轮冒烟通过）；14.7 待办表按 E~G 组实测结论更正；第八节 Git 状态刷新
+> 2026-11-28 补第十六节（无人值守闭环加固、收摊假阳性修复、当前配置噪声底）；15.7 待验证项已转「已实跑验证」
+> 当前阶段：M3 EKF 前置 — **E 组基线已于 11-24 完成**，下一步看 `transform_tolerance`（归档 S11）与视觉现象形态确认（S14）
 
 ---
 
@@ -321,10 +323,12 @@
 
 - 分支：master
 - 远端：`https://github.com/DYH405/ROS2-.git`（`git remote -v` 回读显示 URL 字面含反引号，见 BUGLOG 2026-11-04 条目）
-- 当前 HEAD：`4cf679e`（feat: 巡逻实验指标落盘与AMCL漂移收口）
-- VM 内 origin/master：`f44c7ac`（本地缓存的远端跟踪引用，**未随主机侧推送更新**，见 12.9）
-- 提交数：**21**（2026-11-04 `git rev-list --count HEAD` 实测）；旧记录「5」为 2026-10-22 重建时的口径，已过旧
+- 当前 HEAD：`6a51916`（docs: 修正 AMCL 归档内两处 VERIFY_ODOM_SOURCE 旧路径）
+- VM 内 origin/master：`6a51916`（**2026-11-27 已与本地一致**；`git ls-remote origin refs/heads/master` 回读成功）
+- 提交数：以 `git rev-list --count HEAD` 实测为准（11-04 记录「21」已过旧，勿引用）
 - 旧 .git 备份：`.git_broken_backup/`（已在 .gitignore 中排除）
+- `.trae/`（IDE 配置目录）已加入 `.gitignore`，不入库
+- ⚠️ 2026-11-27 工作区未提交改动（无人值守闭环加固，见第十六节）：`scripts/run_one_experiment.sh`、`src/autopartol_robot/launch/autopartol.launch.py`、`src/autopartol_robot/config/partol_config.yaml`、`src/autopartol_robot/autopartol_robot/partol_node.py`
 
 ---
 
@@ -902,17 +906,228 @@ w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
 
 **末点航向超调**：A +20.5°、B +17.0°、D +18.1°，而 `yaw_goal_tolerance` 仅 8.6°。D 组末点 AMCL 与真值 yaw 完全一致（误差 0.00°），证明**超调不是 AMCL 估计错，而是车真的多转了**。机理为「判到位瞬间估计滞后 → 判成功 → 停车后补正」，量级 ≈ `update_min_a` 门限 + 容差。修正 `sep` 后物理转速变快，超调可能涨到 22~25°，需在新基线重测。
 
-### 14.7 下一步（几何修正后必须重建基线）
+### 14.7 下一步（**2026-11-27 更正**：E 组已于 11-24 完成，原表全部过时）
 
-| 编号 | 待办 | 说明 |
-|:---:|:---|:---|
-| E1 | **重建基线 E 组**：`sep 0.36` + `z .9/.1` + `alpha 0.2` | 🔴 几何已变，A~D 不再同源；后续对照以此为准 |
-| E2 | 单独测 `update_min_a: 0.2 → 0.05` | 必须在 E1 之后，避免双变量 |
-| E3 | `max_vel_theta: 1.0` 是否降到 0.67 | 视 E1 超调是否涨到 22~25° 再定 |
-| E4 | `laser_likelihood_max_dist: 2.0` 与 `sigma_hit: 0.05` 匹配性核查 | 现有不匹配项 |
-| E5 | `recovery_alpha_fast/slow` 实跑验证 | 仍未实跑（见 14.5 R1） |
-| E6 | 可选：同步 `worlds/one.world` 的 `wheel_separation` | 该 world 无引用，死副本 |
+> ⚠️ 本节原写于 **2026-11-23**（当时 E 组尚未开跑），11-24 跑完后未回头更新，导致 `HANDOFF_SESSION_20261126` 交接时误判「E1 未开跑」。以下状态以归档第七节（S1~S14）为准：[docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md)
+
+| 编号 | 待办 | 状态 | 说明 |
+|:---:|:---|:---:|:---|
+| E1 | 重建基线 E 组：`sep 0.36` + `z .9/.1` + `alpha 0.2` | ✅ **已完成** | `20261124_203938_sep036_baseline`：10/10、200.4 s、末点 0.033 m、零 Spin/BackUp；yaml md5 与 D 组完全相同，构成天然单变量对照（归档 8.1/8.2） |
+| E2 | 单独测 `update_min_a: 0.2 → 0.05` | 🔴 待跑 | E/F/G 三组均未动此值。**但优先序见 E8**：形态未确认前不宜先动 |
+| E3 | `max_vel_theta: 1.0` 降到 0.67 | ✅ **无需下调** | 修正 `sep` 后超调未失控：E +7.7°、F +8.5°、G +7.9~17.9°，均落在 `yaw_goal_tolerance 8.6°` 附近，**未出现预期的 22~25°** |
+| E4 | `laser_likelihood_max_dist: 2.0` 与 `sigma_hit: 0.05` 匹配性核查 | 🟢 未动 | 仍为不匹配项 |
+| E5 | `recovery_alpha_fast/slow` 实跑验证（原 14.5 R1） | ✅ **已完成** | G 组三跑（0/0 两跑 + 0.1/0.001 一跑）均 10/10、无可测差异；**定稿 0.0/0.0**，理由是去掉随机源、提高批量可重复性，非精度更优 |
+| E6 | 同步 `worlds/one.world` 的 `wheel_separation` | 🟢 无需处理 | 该 world 无引用，死副本 |
+| **E7**（原表遗漏） | **`transform_tolerance: 1.0 → 0.1`** | 🔴 **优先** | 当前值为 nav2 常规值的 10 倍，是「雷达扫描与地图不重合」的**第一嫌疑**，见归档 8.5 / S11 |
+| **E8**（原表遗漏） | 确认视觉现象形态（扇形旋转／整体平移／整体弹跳） | 🔴 **阻塞** | 形态决定先动 `update_min_a` 还是 `transform_tolerance`，见归档 8.5 / S14。**这是 E2/E7 的前置** |
 
 ### 14.8 踩坑补充
 
 **`params_file` 路径决定是否需 build**：`gazebo.sh` 传的是 `src/` 下绝对路径，改 yaml 即生效；而 `autopartol.launch.py` 用 `get_package_share_directory()` 读 `install/` 副本，改 `partol_config.yaml` **必须 `colcon build`**（除非曾用 `--symlink-install`）。同一次改动里两个文件，生效方式不同。
+
+---
+
+## 十五、2026-11-27 更新：许可统一 + 实验脚本实跑修复 + 单轮冒烟通过
+
+### 15.1 许可统一为 Apache-2.0
+
+| 包 | 改动 |
+|:---|:---|
+| `src/pkg03_gazebo_20260814` | `package.xml` `<license>MIT</license>` → `Apache-2.0`，目录内 `LICENSE`（原 MIT 全文）替换为根 `LICENSE` 的 Apache-2.0 全文 |
+| `src/autopartol_interfaces` | 同上 |
+
+**为什么要连 `LICENSE` 文件一起换**：只改 `package.xml` 会造成「声明说 Apache、同目录文件说 MIT」的新矛盾。
+
+**有意保留不动的三处**（不是遗漏）：
+
+| 位置 | 现状 | 理由 |
+|:---|:---|:---|
+| `src/pkg02_backup_20260811/package.xml` | `MIT` | 学习备份包，README 标「待定」 |
+| `src/pkg01_backup_20260808_py/package.xml` | `TODO: License declaration` | 同上，脚手架默认值，非错误声明 |
+| `docs/archive/` 内提及 MIT 的历史记录 | 原样 | 归档件按约定不改写 |
+| `rplidar_ros`(BSD) / `wpr_simulation2`(GPLv3) | 原样 | 第三方包，已在根 `NOTICE` 声明 |
+
+### 15.2 文档断链修复
+
+文件搬进子目录后引用未跟随，共修 8 处：`HANDOFF.md` 3 处、`BUGLOG.md` 2 处、`docs/operations/VERIFY_ODOM_SOURCE.md` 1 处、`docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md` 2 处。全部为 `docs/VERIFY_ODOM_SOURCE.md` → `docs/operations/`、`docs/AMCL_PARAM_SWEEP_ARCHIVE.md` → `docs/experiments/`。**`docs/archive/` 下的失效引用按约定不动。**
+
+### 15.3 ⚠️ 实验脚本三处实跑修复（`scripts/run_one_experiment.sh`）
+
+**背景**：`setsid` 收摊那套改动是从宿主机侧过期快照整文件 `cp` 进主仓库的，**只做过 `bash -n` 语法检查，从未在本环境实跑**。首次冒烟连挂两轮，暴露两处「路径/判据假设错误」——这类错误 `bash -n` 查不出来。
+
+| # | 症状 | 根因 | 修法 |
+|:---:|:---|:---|:---|
+| 1 | `fail S2 install_stale:newline_guard_missing` | `INST_NODE` 写死非 symlink 安装路径 `install/autopartol_robot/lib/python3.10/site-packages/autopartol_robot/partol_node.py`；本工作空间是 **`--symlink-install`**，`install/` 里只有 `autopartol-robot.egg-link` 指向 `build/`，无实体文件 | 改为按运行时真实导入路径解析（`python3 -c "import autopartol_robot..."`），取不到再兜底 `src/`，并打印 `partol_node source:` 便于事后核对 |
+| 2 | `fail S2 stale_ros_graph:scan_or_amcl_present` | 判据是「话题出现在 `ros2 topic list` 就 fail」。但 **ROS 2 只要有订阅者，话题就会出现在图里**；`capture_truth_pose.py` 第 62 行订阅 `/amcl_pose`，于是 `Publisher count: 0 / Subscription count: 1` 也触发误报 | 新增 `topic_has_publisher()`，改判 `ros2 topic info` 的 `Publisher count > 0`；`wait_topics_gone` 同步改用该判据（原写法会让每轮收尾白等满 20 s） |
+| 3 | 语义不符 | `fail` 文案仍写 `scan_or_amcl_present` | 改为 `scan_or_amcl_published`，与实际判据一致 |
+
+**为什么保留 `topics_present`**：`wait_for_topic` 仍在用（等话题就绪时订阅者存在也算就绪，该语义正确），两个函数并存、各管一件事。
+
+**为什么不用 `ros2 daemon stop` 来清幻影话题**：初判是 daemon 缓存，实测 `Publisher count: 0` 但 `Subscription count: 1`，证明是**真实订阅者**不是缓存。且 `wait_topics_gone` 只有 20 s 预算、0.5 s 轮询，用 `--no-daemon` 会每轮都超时，等于废掉收尾验证。
+
+### 15.4 单轮冒烟结果（当前唯一可信参照点）
+
+| 项 | 值 |
+|:---|:---|
+| 目录 | `experiment_logs/run_one_20261127_201559` |
+| `run_id` | `20261127_201631_r1` |
+| 结果 | **10/10，failed=0，199.9 s，completed** |
+| 末点真值 | `gt (0.053, -0.129, 1.710)` |
+| 末点 AMCL | `amcl (0.052, -0.138, 1.779)` |
+| 末点位置误差 | **约 0.014 m** |
+| 末点航向误差 | **约 3.95°** |
+| `巡逻结束，全程统计` | 计数 1（**判据真实触发，非超时收尾**） |
+| `fail.log` | 不存在 |
+| 残留进程 | 无（`setsid` + 进程组杀生效） |
+
+**`setsid` 收摊逻辑至此实测验证完毕。** 另有一个非噪声观察：本轮 **199.9 s**，而历史同任务（11-05~11-07）为 **219.9 ~ 228.1 s**，快约 10%。差异远超耗时噪声（±1.6%），大概率是 `wheel_separation` 修正后 `/odom` 航向不再被放大 1.5 倍、机器人少做无效纠偏的收益。
+
+### 15.5 「基线重建」已撤回，改为单轮逐步改进
+
+**撤回理由（技术性的，不是省事）**：`run_batch_experiments.sh` 的 `count_valid` / `count_completed` 读 `baseline_summary.csv` **全量**，不区分年代。实测该文件 `valid=7`、`completed=16`，而 `MAX_RUNS=15`：
+
+```bash
+if [ "$COMPLETED_NOW" -ge "$MAX_RUNS" ]; then   # 16 >= 15
+  log "[STOP] max_runs_reached（前置）"
+  exit 0                                        # 直接退出，一轮都不跑
+```
+
+**即历史数据会让批跑在启动 Gazebo 之前就停机。** 且用户已明确：**不需要统计意义上的基线，只要「一步一步比之前更好」**。
+
+| | 基线重建（已撤回） | 逐步改进（现行） |
+|:---|:---|:---|
+| 目的 | N=10 统计均值/方差 | 改一个参数，看是否比上一版好 |
+| 轮数 | 10 轮 valid | **1 轮** |
+| 是否依赖批脚本 | 是 | **否，直接跑单轮** |
+| 判据 | `baseline_summary.csv` | `patrol_runs.csv` 末两行对比 |
+
+**归档、移目录、重建 `baseline_summary.csv` 这一整套动作全部取消，无需执行。**
+
+### 15.6 ⚠️ 指标可信度：单轮能判什么、不能判什么
+
+用历史同配置 4 轮 valid 实测的波动（**这是选判据的唯一依据**）：
+
+| 指标 | 4 轮实测 | 均值 | 标准差 | 相对波动 | 单轮可用性 |
+|:---|:---|:---|:---|:---|:---|
+| `total_time_s` | 227.4 / 220.4 / 219.9 / 221.8 | 222.4 | **3.5 s** | **1.6%** | ✅ 差 >10 s 可信 |
+| `yaw_err_deg` | 11.06 / 2.86 / 6.88 / 10.43 | 7.8 | **3.8°** | 49% | 🟡 差 >5° 可信 |
+| `pos_err_m` | 0.0755 / 0.1269 / 0.0262 / 0.0308 | 0.065 | **0.047 m** | **72%** | ❌ **单轮不可信** |
+
+**`pos_err` 同配置能差 4.8 倍（0.026 → 0.127）**。因此：
+
+- **成功率**：10/10 vs 9/10 本身就是强信号，无需统计。
+- **耗时**：差 >10 s（约 5%）才算真变化。
+- **`pos_err`**：差到 >0.05 m 才当回事，或连跑 2 轮取中位数。**「把 pos_err 从 0.05 优化到 0.02」这类目标，单轮测不出来——那是噪声，不是参数效果。**
+
+**单轮验证的天花板**：在当前噪声水平下，单轮只能确认「没变差」和「快慢」，确认不了「更准」。
+
+### 15.7 遗留项（下次接手先看这里）
+
+| 项 | 状态 | 说明 |
+|:---|:---:|:---|
+| `scripts/run_one_experiment.sh` 三处修复 | ✅ 已入库 | 见 15.3；当前工作区改动属第十六节 |
+| `docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md` 两处路径 | ✅ 已入库 | 见 15.2；`6a51916` 提交 |
+| 无人值守闭环加固（轮数透传 / 图片核验 / 收摊复检 / 残留恢复） | ✅ **已实跑验证** | 见第十六节；2026-11-28 连跑 4 次，收摊复检 3 clean / 1 假阳性已修 |
+| `teardown` 每轮报「20s 内未消失，转 KILL」 | 🟢 不影响正确性 | `TERM` 后 `gzserver` 响应慢，最终靠 `KILL` 收干净（`leftover_exit=1` 已证）。代价是**每轮白等 20 s**，单轮跑可忽略，批量跑再优化 |
+| 宿主机侧快照 `/mnt/hgfs/VM_share/ros2_ws` | ✅ 已替换 | 原为落后分支，已整体替换为 `1fb1e5b` 干净副本；**本轮未提交改动不在快照内** |
+| `experiment_logs/.batch_run.lock` | 🟢 无需处理 | 11-07 遗留空锁文件；脚本用 `flock -n` 建议锁，进程退出即释放，**不要手工删** |
+| `baseline_summary.csv` / `patrol_runs.csv` 历史数据 | 🟢 仅作参照 | 早于 11-10 `/odom` 切换、11-23 `sep` 修正、11-22~23 AMCL 定参，**不可作为当前口径基线** |
+
+---
+
+## 十六、2026-11-28 更新：无人值守闭环加固 + 收摊假阳性修复 + RViz 启动顺序回退
+
+> 详细归档见 `docs/experiments/UNATTENDED_CLOSURE_20261128.md`。本节只留结论与下次接手要用的数字。
+
+### 16.1 本次改动总览（全部落在 `scripts/run_one_experiment.sh`）
+
+| # | 改动 | 解决的故障 | 触发证据 |
+|:---:|:---|:---|:---|
+| 1 | RViz2 由「S3 就绪检查之后」前移到「Nav2 启动之后、S3 之前」 | 巡逻永久卡在 `waitUntilNav2Active()`，表现为「半天不开始巡航」 | 实跑日志连续刷 `timestamp earlier than all the data in the transform cache` |
+| 2 | `wait_topics_gone` 首轮超时不再直接判脏，改为「停 daemon → 预热 → 二次确认」 | 偶发 `[FAIL] step=S7 reason=teardown_dirty:topics_published exit=8` | `run_one_20261128_004741` 报脏；紧接着 `run_one_20261128_005242` 开跑时同一判据报「无发布者」 |
+| 3 | `teardown_verify` 进程组未清空时跳过话题判定；首轮预算 5 s → 12 s | 同一根因被写成两个脏项（`proc_group_alive,topics_published`），误导成两个独立故障 | 同上 |
+| 4 | `recover_stale` 话题等待 5 s → 12 s | 「连着跑第二次」在清理环节假失败 | 同上 |
+| 5 | `max_rounds` 改为 launch 参数透传；`partol_node` 默认值 3 → 1 与 yaml 对齐 | yaml 写 1、代码默认 3 的纸面矛盾（15.7 遗留项） | 改轮数时改 yaml 生效、改代码无效 |
+| 6 | 图片核验改用跑前/跑后快照差集，期望数取 CSV 末行 `succeeded` | 日志「图片保存成功」少打一条导致假阴性 | `call_async` 异步竞态：末张图 imwrite 与回调都在日志终句之后 |
+
+### 16.2 「半天不开始巡航」的根因推导
+
+rviz2 启动瞬间三件重活同时发生：编译 GLSL 着色器、上传 202×161 地图 swatch、填满 TF 缓存，CPU 出现明显峰值。该峰值若与 patrol 的 `init_robot_pose` 重叠（`waitUntilNav2Active()` 要连续查 TF 与 costmap），后果链条是：
+
+1. scan/TF 消息积压 → 超过 TF 缓存 10 s 窗口；
+2. costmap 整帧丢弃，日志刷 `timestamp earlier than all the data in the transform cache`；
+3. `waitUntilNav2Active()` 永不返回 → 巡逻不开始。
+
+**为什么选「前移」而不是「加长 TF 缓存」**：加长缓存要改 `nav2_params_hybrid.yaml` 的 `transform_tolerance`，那属于 14.7 里正在评估的 AMCL 参数，会让本轮实验混入第二个变量；前移只动启动顺序，不碰任何参数，代价为零。
+
+**为什么前移后还要加 S4.5 预热探针**：只前移不等待，RViz 峰值可能刚好落在 patrol 启动那一刻。探针判据取 `rviz.log` 出现 `Trying to create a map`，该行说明地图 swatch 已上传、GLSL 编译与地图加载两个峰值已过。上限 15 s 的理由：实测从启动到该行约 2~6 s（含 GLSL 报错重试），15 s 留 2 倍余量；超时仍继续跑，因为「RViz 慢」不该阻断实验。
+
+### 16.3 收摊复检假阳性的根因
+
+`topic_has_publisher()` 读的是 `ros2 topic info`，即 **ros2 daemon 的图缓存**，不是实时 DDS 图。进程被 KILL 后，参与者要等租约到期才从缓存剔除，这段时间仍报 `Publisher count >= 1`。
+
+反证（这是判定「缓存」而非「残留」的关键证据）：
+
+| 时间 | 判据结果 |
+|:---|:---|
+| `run_one_20261128_004741` 收摊 | `DIRTY(topics_published)`，exit 8 |
+| 约 30 s 后 `run_one_20261128_005242` 开跑（S2 同一判据） | 未报 `scan_or_amcl_published`，收摊复检 clean |
+
+同一套环境在 30 s 内从「有发布者」变成「无发布者」，中间没有任何进程被重新拉起，只可能是缓存剔除。放大因素是采样窗口：每次 `ros2 topic info` 新起一个 CLI 进程约 1 s，每轮要查 `/scan` 与 `/amcl_pose` 两个话题，原 `wait_topics_gone 5` 实际只采到 2~3 个样本。
+
+**修法**：首轮超时后 `ros2 daemon stop` 丢缓存 → 预热一次 `ros2 topic list` 让新 daemon 建完首轮图 → 再轮询 8 s。只有重建图后仍报发布者才判脏。
+
+**为什么不用 `--no-daemon`**：Humble 的 `ros2topic` 动词没有该选项。
+**为什么不是把首轮从 5 s 加长到 20 s**：剔除时间取决于租约、不可控，加长只是把误报挪后，且每次收摊都白等。
+**预热那一步不能省**：缺它时新 daemon 第一轮可能拿到空图，把真实发布者读成 0，等于用假阴性换假阳性。
+**残余风险**：确认窗内图未建完可能漏判真实发布者，兜底在 S2 开跑前的 stale 检查（那时 daemon 已热）。
+
+### 16.4 实跑验证（2026-11-28，4 次，同一配置）
+
+| 目录 | `run_id` | 结果 | 图片 | CSV 行 | 收摊 | exit |
+|:---|:---|:---|:---|:---|:---|:---:|
+| `run_one_20261128_004741` | `20261128_004803_r1` | 10/10 | 10/10 | 39→40 | ❌ `DIRTY(topics_published)` | **8** |
+| `run_one_20261128_005242` | `20261128_005304_r1` | 10/10 | 10/10 | 40→41 | ✅ clean | 0 |
+| `run_one_20261128_011930` | `20261128_011953_r1` | 10/10 | 10/10 | 41→42 | ✅ clean（走 KILL 慢路径） | 0 |
+| `run_one_20261128_012432` | `20261128_012503_r1` | 10/10 | 10/10 | 42→43 | ✅ clean（走 KILL 慢路径） | 0 |
+
+**修后两次连跑均 `exit 0`，且是「连着跑第二次」**（前一次的收摊结果未人工干预），15.7 的「可重复执行」项成立。
+
+**新出现的固定现象（不是故障）**：修后两次都打出 `teardown: TERM 后 20s + daemon 重建确认仍报发布者，转 KILL`。说明 `TERM` 对 `gzserver` 确实不生效、必须靠 `KILL`，与 15.7 原有记录一致；但判定前多花约 10 s（2 s 停 daemon + 8 s 确认窗）。**慢路径代价约 10 s/次，快路径不受影响。**
+
+### 16.5 噪声底：后续参数改动的评判线
+
+**指标定义**（末点，取自 `truth_last_pose.csv` 同一时刻的 gt 与 amcl）：
+
+1. `pos_err_m = sqrt((amcl_x - gt_x)^2 + (amcl_y - gt_y)^2)`，单位 m；
+2. `yaw_err_deg = |wrap(gt_yaw - amcl_yaw)|`，单位 °，wrap 到 (-180, 180]；
+3. `total_time_s`（仿真钟，CSV 第 10 列）与墙钟时长 `end_time - start_time`；
+4. `succeeded / total_goals`。
+
+**当前配置 4 个同配置样本（11-28，RViz 常开）**：
+
+| 指标 | 4 次实测 | 均值 | 样本标准差 | 极差 |
+|:---|:---|:---|:---|:---|
+| `pos_err_m` | 0.0581 / 0.0190 / 0.0242 / 0.0256 | **0.0317** | **0.0178** | **0.0391** |
+| `yaw_err_deg` | 1.72 / 0.52 / 9.63 / 1.95 | **3.45** | **4.16** | **9.11** |
+| `total_time_s` | 214.7 / 203.4 / 235.2 / 197.7 | **212.8** | **16.6** | **37.5** |
+| 墙钟时长 s | 222 / 212 / 241 / 204 | 219.8 | 16.0 | 37.0 |
+
+**判据（先用极差，不用标准差）**：n=3~4 时样本标准差本身不可靠（其相对不确定度约 50%），故取**极差**作保守阈值：
+
+1. `pos_err_m` 差异 ≤ **0.04 m** → 判为噪声，不可分辨；
+2. `yaw_err_deg` 差异 ≤ **9°** → 判为噪声，不可分辨；
+3. `total_time_s` 差异 ≤ **38 s** → 判为噪声，不可分辨。
+
+**与 15.6 的对比（重要，不可混用）**：15.6 的 4 个样本（11-07 采集）`total_time_s` 标准差仅 3.5 s、极差 7.5 s；本次为 16.6 s / 37.5 s，**放大 4.7 倍**。差异来源未定论（RViz 常开、11-10 `/odom` 切换、11-23 `sep` 修正都可能贡献），**不能直接断言是 RViz 造成的**，需 `--no-rviz` A/B 才能定论。
+
+**直接后果**：15.4 依赖的「快约 10%（约 20 s）」判断在当前配置下**已失效**——10 s 的改进小于 38 s 的极差，测不出来。要恢复耗时判别能力，必须先降噪（关 RViz 或改用心跳/CPU 时间等不随负载漂移的量），否则参数扫描在耗时维度上全是噪声。
+
+### 16.6 遗留项
+
+| 项 | 状态 | 说明 |
+|:---|:---:|:---|
+| `--no-rviz` A/B 验证 RViz 对耗时噪声的贡献 | ⚠️ 待做 | 用新行 `(end_time - start_time) - total_time_s` 判定；若差额回落到 0~1 s（RTF≈1）即确认 |
+| `20261128_011953_r1` 双指标异常 | ⚠️ 待查 | 耗时 235.2 s 与航向误差 9.63° 同时偏大，是该组 4 样本里的唯一离群点，需看该轮 costmap/AMCL 日志 |
+| 历史 `truth_last_pose.csv` 重复与无效行 | 🟢 仅作参照 | `20261107_172028_r1` 重复 3 次；`20261119_205138_r1` 两次 amcl 完全相同且 gt=(0,0,0.001) 为初始位姿非末点 |
+| `note` 字段不能当质量标记 | 🟢 已知 | `nav_fail_action=skip` 下恒为 `completed`，那两条 0/10 的灾难行也标 completed |
