@@ -11,7 +11,7 @@
 ## 它能做什么
 
 1. 按 `patrol_config.yaml` 的 `target_point` 逐点导航，一轮 10 个点；到达后调用拍照服务并写入记录。
-2. 连续跑三次都不需要人工干预：跑满配置轮数（`max_rounds`）即停，收摊后下一轮可以直接起。
+2. 三次**独立启动**、每次只跑单轮（`max_rounds: 1`）、全程无人工干预：`patrol_runs.csv` 里三条记录的 `max_rounds` 列均为 `1`、`run_id` 均以 `_r1` 结尾，三次开始时间分别为 10:29:49 / 10:34:11 / 10:38:42，各自走完完整的起 Gazebo → 巡逻 → 收摊流程。这证明的是「三次冷启动都成功」，**不是**「一个进程连跑三轮」；后者需 `ROUNDS=3` 才能测，本文没有这项数据。
 3. 每轮产出可复核的数字：末点定位误差、航向误差、仿真耗时、墙钟耗时、图片数、RTF，以及是否干净退出（exit code）。
 4. 失败处理：单点导航失败重试 `nav_retry_count` 次（当前 2），仍失败按 `nav_fail_action: skip` 跳过该点，不阻塞整轮。
 5. 仿真真值来自 Gazebo 的 `/gazebo/model_states`，不依赖 AMCL 自报位置。
@@ -20,7 +20,7 @@
 
 ## 实测结果
 
-2026-11-28 10:29–10:42，同一配置连跑 3 次，未改任何文件与参数，RViz 保持开启：
+2026-11-28 10:29–10:42，同一配置**独立启动 3 次**（每次 `max_rounds: 1`，三次之间重新起停整套仿真），未改任何文件与参数，RViz 保持开启：
 
 | `run_id`             |  航点 |  图片 | `pos_err_m` | `yaw_err_deg` | `total_time_s` | 墙钟 s |  RTF  | 收摊                 | exit |
 | :------------------- | :---: | :---: | :---------: | :-----------: | :------------: | :----: | :---: | :------------------- | :--: |
@@ -99,10 +99,11 @@ ros2 launch patrol_mission patrol.launch.py max_rounds:=3      # 显式覆盖轮
 **数据流**（文字版，替代拓扑图）：
 
 1. `patrol_node` → `/navigate_to_pose`(action) → Nav2 `bt_navigator` → `planner_server` / `controller_server`。
-2. `/scan` + `/odom` + `/imu` → AMCL → `map→odom` TF。
+2. `/scan` + `/odom` → AMCL → `map→odom` TF。AMCL 的参数只有 `scan_topic: scan` 与 `odom_topic: /odom`（见 `nav2_params_hybrid.yaml`），没有 `imu_topic`，Nav2 的 AMCL 本身也不提供 IMU 输入口；运动模型为 `nav2_amcl::DifferentialMotionModel`，靠轮式里程计约束。
 3. `patrol_node` → `capture_image`(srv) → `image_capture_node` → `/camera/image_raw` → `patrol_images/`。
 4. `patrol_node` → `speech_text`(srv) → `speech_node` → 扬声器。
 5. Gazebo `/gazebo/model_states` → `scripts/capture_truth_pose.py` → `truth_last_pose.csv`（真值，不参与导航）。
+6. `/imu` 由 Gazebo 插件发布（`imu.urdf.xacro` 内 `libgazebo_ros_imu_sensor.so`），但**主链路中无消费者**：EKF 只在 `ekf_test.launch.py` 里起，主启动走 `gazebo_test.launch.py`，故该话题只被 `record_30s.sh` 录进 bag。因此本文任何指标都不含 IMU 融合效果。
 
 **地图与航点**（`src/patrol_simulation/maps/my_map.yaml`）：
 
@@ -126,8 +127,8 @@ ros2 launch patrol_mission patrol.launch.py max_rounds:=3      # 显式覆盖轮
 
 ## 已知限制
 
-1. **仿真 IMU 没有噪声**：`src/patrol_simulation/urdf/parts/sensors/imu.urdf.xacro` 内无 `<noise>` 块、无协方差设置。因此「融合前后对比」只能说明运动模型约束的作用，不能当作真实 IMU 的降噪效果。
-2. **EKF 未进主链路**：`ekf.yaml` / `ekf_test.launch.py` / `gazebo_ekf.sh` 已存在，但主启动走 `gazebo_test.launch.py`，未启用 EKF。
+1. **IMU 完全不参与定位**：`imu.urdf.xacro` 内无 `<noise>` 块、无协方差设置，且主链路里没有任何节点订阅 `/imu`（见「数据流」第 6 条）。因此本仓库**不存在**「IMU 融合前后对比」这类结论；既不能当作真实 IMU 的降噪效果，也不能当作融合算法的验证。
+2. **EKF 未进主链路**：`ekf.yaml` / `ekf_test.launch.py` / `gazebo_ekf.sh` 已存在，但主启动走 `gazebo_test.launch.py`，未启用 EKF。若要让 `/imu` 进入定位链，需接上 EKF 并重测全部指标。
 3. **样本量小**：目前可引用的重复性数据是 n=3（同日同时段），不能外推到其他时段或环境。
 4. **收摊快慢路径不稳定**：同一配置下出现过 TERM 快路径与 KILL 慢路径（相差约 10 s），不影响正确性，但会放大耗时波动。
 5. **未在实物平台验证**：<!-- 待补：实车迁移进度与差异数据 -->
