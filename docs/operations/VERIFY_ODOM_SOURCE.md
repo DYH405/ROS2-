@@ -80,7 +80,7 @@ pgrep -af "gzserver|gzclient|nav2_container|run_one_experiment" ; echo "EXIT=$?"
 ### 3.2 启动仿真与 Nav2（终端 A）
 
 ```bash
-cd ~/ros2_ws && source install/setup.bash && ~/ros2_ws/src/pkg03_gazebo_20260814/scripts/gazebo.sh
+cd ~/ros2_ws && source install/setup.bash && ~/ros2_ws/src/patrol_simulation/scripts/gazebo.sh
 ```
 
 该脚本依次：清残留 → `gzserver`（headless） → `sleep 3` → Nav2 `bringup_launch.py` → `sleep 2.5` → RViz2。
@@ -275,7 +275,7 @@ URDF 未写 + 默认 WORLD + 实测行为吻合 —— 三条互证，逻辑闭�
 
 **必须用整数 `0`，不能写 `ENCODER`**：源码用 `Get<int>()` 解析，字符串会解析失败，而 Gazebo 的 `Get<int>` 在失败时**静默返回默认值 WORLD**，表现为"改了、build 了、重启了，行为一点没变且无任何报错"。
 
-改后需 `colcon build --packages-select pkg03_gazebo_20260814`（`urdf/` 在 install 列表内，launch 读 `install/` 副本）并重启仿真，再按本文第三节流程复测。
+改后需 `colcon build --packages-select patrol_simulation`（`urdf/` 在 install 列表内，launch 读 `install/` 副本）并重启仿真，再按本文第三节流程复测。
 
 ### 5.6 预期复测结果与已知局限
 
@@ -322,7 +322,7 @@ URDF 未写 + 默认 WORLD + 实测行为吻合 —— 三条互证，逻辑闭�
 ### 7.2 改动与执行
 
 1. `urdf/parts/plugins.urdf.xacro` 在 `<publish_wheel_tf>` 后插入 `<odometry_source>0</odometry_source>`，并加注释说明"必须写整数"的原因
-2. `colcon build --packages-select pkg03_gazebo_20260814`（`urdf/` 在 install 列表内，launch 读 `install/` 副本）
+2. `colcon build --packages-select patrol_simulation`（`urdf/` 在 install 列表内，launch 读 `install/` 副本）
 3. 重启仿真（URDF 在 spawn 时刻读入 Gazebo，不重启则跑旧模型）
 4. 按 3.3 在 RViz 内导航，停稳后按 3.4 取数
 
@@ -500,7 +500,7 @@ B 组（EKF 融合 IMU）：航向靠陀螺仪   → 不受打滑影响 → 横�
 
 ### 9.5 处置与影响
 
-- 修复：`urdf/parts/plugins.urdf.xacro` `wheel_separation 0.24 → 0.36`，`colcon build --packages-select pkg03_gazebo_20260814` 后重启 Gazebo 生效。
+- 修复：`urdf/parts/plugins.urdf.xacro` `wheel_separation 0.24 → 0.36`，`colcon build --packages-select patrol_simulation` 后重启 Gazebo 生效。
 - `worlds/one.world` 内也有 0.24，但该 world 无任何引用（实际用 `robocup_home.world` + `spawn_entity` 注入 xacro），死副本，未动。
 - **对既有数据**：AMCL 对照实验 A~D 四组的 **yaw 类指标全部失效**（输入自带 50% 比例误差）；位置类指标不受影响。见 [AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md) 4.5。
 - **第八节待办状态更新**：D-03 / D-04 **作废**（判据基于错误前提）；其目标（区分打滑与累积漂移）已由本节探针一次性回答。D-01（漂移曲线）仍可做，但需在 `sep 0.36` 的新基线上重新采集。

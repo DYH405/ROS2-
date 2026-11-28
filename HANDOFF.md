@@ -17,8 +17,8 @@
 | 仿真环境 | Gazebo |
 | 导航框架 | Nav2 |
 | 建图工具 | SLAM Toolbox (online_async) |
-| Git 远端 | `https://github.com/DYH405/ROS2-.git` |
-| 核心功能包 | `pkg03_gazebo_20260814`, `autopartol_robot`, `robot_speech`, `robot_vision` |
+| Git 远端 | `https://github.com/DYH405/patrol-sim.git` |
+| 核心功能包 | `patrol_simulation`, `patrol_mission`, `patrol_speech`, `patrol_vision` |
 
 ---
 
@@ -26,13 +26,13 @@
 
 ### 2.1 一键启动 — `gazebo.sh`
 
-- 路径：`src/pkg03_gazebo_20260814/scripts/gazebo.sh`
+- 路径：`src/patrol_simulation/scripts/gazebo.sh`
 - 流程：Gazebo 仿真 → Nav2(AMCL定位+导航) → RViz2
 - 特性：cleanup 优雅退出、共享内存清理、headless 模式
 
 ### 2.2 SLAM 建图 — `slam.sh`（新建）
 
-- 路径：`src/pkg03_gazebo_20260814/scripts/slam.sh`
+- 路径：`src/patrol_simulation/scripts/slam.sh`
 - 流程：
   1. 启动 Gazebo 仿真
   2. 检查核心话题（/scan、/odom）+ 验证数据频率
@@ -45,10 +45,10 @@
 
 ### 2.3 正常定位 + 正常导航
 
-- 地图：`src/pkg03_gazebo_20260814/maps/my_map.yaml` + `my_map.pgm`
-- Nav2 参数：`src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml`（当前入口；`nav2_params.yaml` 为基线备用）
-- 巡逻节点：`autopartol_robot` — 10个巡逻点 + 超时机制（`total_goals` 语义 = 巡逻点数量 = 10）
-- 联合启动：`autopartol.launch.py`（巡逻+语音+图像）
+- 地图：`src/patrol_simulation/maps/my_map.yaml` + `my_map.pgm`
+- Nav2 参数：`src/patrol_simulation/config/nav2_params_hybrid.yaml`（当前入口；`nav2_params.yaml` 为基线备用）
+- 巡逻节点：`patrol_mission` — 10个巡逻点 + 超时机制（`total_goals` 语义 = 巡逻点数量 = 10）
+- 联合启动：`patrol.launch.py`（巡逻+语音+图像）
 - 健壮性修复（2026-10-25）：
   - `goToPose()` 返回值检查，目标被拒时返回 `'rejected'`，不重试
   - `elapsed` 防御性初始化，避免 UnboundLocalError
@@ -62,7 +62,7 @@
 
 ### 2.4 rosbag 录制 — `record_30s.sh`（已优化）
 
-- 路径：`src/pkg03_gazebo_20260814/scripts/record_30s.sh`
+- 路径：`src/patrol_simulation/scripts/record_30s.sh`
 - 录制话题：`/scan /tf /tf_static /cmd_vel /odom /plan /amcl_pose /imu /clock /odometry/filtered /gazebo/model_states /navigate_to_pose/_action/status`（12个）
 - 特性：
   - 话题就绪检测：录制前等待 /odom /scan /cmd_vel 出现
@@ -284,16 +284,16 @@
 
 | 文件 | 路径 | 说明 |
 |:---|:---|:---|
-| gazebo.sh | `src/pkg03_gazebo_20260814/scripts/gazebo.sh` | 一键启动（导航模式） |
-| slam.sh | `src/pkg03_gazebo_20260814/scripts/slam.sh` | 一键启动（建图模式） |
-| record_30s.sh | `src/pkg03_gazebo_20260814/scripts/record_30s.sh` | 30秒 bag 录制 |
+| gazebo.sh | `src/patrol_simulation/scripts/gazebo.sh` | 一键启动（导航模式） |
+| slam.sh | `src/patrol_simulation/scripts/slam.sh` | 一键启动（建图模式） |
+| record_30s.sh | `src/patrol_simulation/scripts/record_30s.sh` | 30秒 bag 录制 |
 | bag_analyzer.py | `scripts/bag_analyzer.py` | bag 数据分析工具 |
 | delete_old_images.py | `scripts/delete_old_images.py` | 清理旧图片 |
-| nav2_params.yaml | `src/pkg03_gazebo_20260814/config/nav2_params.yaml` | Nav2 参数配置 |
-| my_map.yaml | `src/pkg03_gazebo_20260814/maps/my_map.yaml` | 导航地图 |
-| partol_node.py | `src/autopartol_robot/autopartol_robot/partol_node.py` | 巡逻导航节点 |
-| partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 10个巡逻点配置 |
-| autopartol.launch.py | `src/autopartol_robot/launch/autopartol.launch.py` | 巡逻联合启动 |
+| nav2_params.yaml | `src/patrol_simulation/config/nav2_params.yaml` | Nav2 参数配置 |
+| my_map.yaml | `src/patrol_simulation/maps/my_map.yaml` | 导航地图 |
+| patrol_node.py | `src/patrol_mission/patrol_mission/patrol_node.py` | 巡逻导航节点 |
+| patrol_config.yaml | `src/patrol_mission/config/patrol_config.yaml` | 10个巡逻点配置 |
+| patrol.launch.py | `src/patrol_mission/launch/patrol.launch.py` | 巡逻联合启动 |
 | patrol_runs.csv | `experiment_logs/patrol_runs.csv` | 巡逻实验指标落盘（12 列，T-P1-01 产出） |
 | patrol_runs_v1_11cols_backup.csv | `experiment_logs/patrol_runs_v1_11cols_backup.csv` | 11 列表头历史备份（T-P1-01-FIX 处置留存） |
 | run_one_experiment.sh | `scripts/run_one_experiment.sh` | 单次端到端实验脚本（重启→就绪→巡逻→落盘→真值→关闭，T-P1-02A 产出） |
@@ -322,13 +322,13 @@
 ## 八、Git 状态
 
 - 分支：master
-- 远端：`https://github.com/DYH405/ROS2-.git`（`git remote -v` 回读显示 URL 字面含反引号，见 BUGLOG 2026-11-04 条目）
+- 远端：`https://github.com/DYH405/patrol-sim.git`（2026-11-28 仓库改名后由 `ROS2-.git` 迁移；改名只影响 URL，GitHub 侧会 301 重定向旧名，但本地 `git remote` 必须显式改，否则推到的是旧仓库地址）
 - 当前 HEAD：`6a51916`（docs: 修正 AMCL 归档内两处 VERIFY_ODOM_SOURCE 旧路径）
 - VM 内 origin/master：`6a51916`（**2026-11-27 已与本地一致**；`git ls-remote origin refs/heads/master` 回读成功）
 - 提交数：以 `git rev-list --count HEAD` 实测为准（11-04 记录「21」已过旧，勿引用）
 - 旧 .git 备份：`.git_broken_backup/`（已在 .gitignore 中排除）
 - `.trae/`（IDE 配置目录）已加入 `.gitignore`，不入库
-- ⚠️ 2026-11-27 工作区未提交改动（无人值守闭环加固，见第十六节）：`scripts/run_one_experiment.sh`、`src/autopartol_robot/launch/autopartol.launch.py`、`src/autopartol_robot/config/partol_config.yaml`、`src/autopartol_robot/autopartol_robot/partol_node.py`
+- ⚠️ 2026-11-27 工作区未提交改动（无人值守闭环加固，见第十六节）：`scripts/run_one_experiment.sh`、`src/patrol_mission/launch/patrol.launch.py`、`src/patrol_mission/config/patrol_config.yaml`、`src/patrol_mission/patrol_mission/patrol_node.py`
 
 ---
 
@@ -433,7 +433,7 @@
 
 - **问题**：`img_save_path` 默认值为空字符串，`cv2.imwrite()` 用相对路径保存到 CWD（当前工作目录），从不同目录启动脚本导致图片散落在 `~/ros2_ws/` 和 `~/ros2_ws/scripts/` 等多处
 - **解决**：
-  - `autopartol.launch.py` 中传入 `img_save_path: '/home/robot/ros2_ws/patrol_images/'`（绝对路径，末尾带 `/`）
+  - `patrol.launch.py` 中传入 `img_save_path: '/home/robot/ros2_ws/patrol_images/'`（绝对路径，末尾带 `/`）
   - 创建专用目录 `~/ros2_ws/patrol_images/`
 - **根因**：launch 文件未传参数 → 节点用空字符串默认值 → 相对路径 → CWD 依赖
 
@@ -455,8 +455,8 @@
 
 | 文件 | 路径 | 说明 |
 |:---|:---|:---|
-| nav2_params_hybrid.yaml | `src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml` | Nav2 Hybrid 规划器配置（当前使用） |
-| nav2_params.yaml | `src/pkg03_gazebo_20260814/config/nav2_params.yaml` | Nav2 原始配置（Dijkstra，备用） |
+| nav2_params_hybrid.yaml | `src/patrol_simulation/config/nav2_params_hybrid.yaml` | Nav2 Hybrid 规划器配置（当前使用） |
+| nav2_params.yaml | `src/patrol_simulation/config/nav2_params.yaml` | Nav2 原始配置（Dijkstra，备用） |
 | patrol_images/ | `patrol_images/` | 巡逻截图统一保存目录 |
 
 ---
@@ -467,23 +467,23 @@
 
 | 编号 | 修复项 | 改动文件 | 说明 |
 |:---:|:---|:---|:---|
-| E | `spin_once` 超时一致性 | `partol_node.py` | 主循环与内层循环统一使用 `timeout_sec=0.0`（非阻塞轮转） |
-| F | 巡逻统计日志 | `partol_node.py` | 每轮结束打印成功/失败/超时/取消计数和耗时 |
-| A | 导航重试机制 | `partol_node.py` + `partol_config.yaml` | 单点失败后可重试 N 次，重试耗尽后可跳过或停止 |
-| C | `get_current_pose` 死循环消除 | `partol_node.py` | 去掉 `while rclpy.ok()` 误导性外层循环，调用方检查返回值 |
+| E | `spin_once` 超时一致性 | `patrol_node.py` | 主循环与内层循环统一使用 `timeout_sec=0.0`（非阻塞轮转） |
+| F | 巡逻统计日志 | `patrol_node.py` | 每轮结束打印成功/失败/超时/取消计数和耗时 |
+| A | 导航重试机制 | `patrol_node.py` + `patrol_config.yaml` | 单点失败后可重试 N 次，重试耗尽后可跳过或停止 |
+| C | `get_current_pose` 死循环消除 | `patrol_node.py` | 去掉 `while rclpy.ok()` 误导性外层循环，调用方检查返回值 |
 
 ### 11.2 use_sim_time 统一
 
 | 文件 | 改前 | 改后 |
 |:---|:---|:---|
-| `partol_config.yaml` | `use_sim_time: false` | `use_sim_time: true` |
-| `autopartol.launch.py` | 未传递 `use_sim_time` | 三个节点均传入 `use_sim_time=True` |
+| `patrol_config.yaml` | `use_sim_time: false` | `use_sim_time: true` |
+| `patrol.launch.py` | 未传递 `use_sim_time` | 三个节点均传入 `use_sim_time=True` |
 
 **原因**：Nav2/Gazebo 全链路使用仿真时钟，巡逻节点用系统时钟会导致 TF 查找、超时判断等行为异常。
 
 ### 11.3 导航重试机制设计
 
-**新增参数**（`partol_config.yaml` 可覆盖）：
+**新增参数**（`patrol_config.yaml` 可覆盖）：
 
 | 参数 | 默认值 | 说明 |
 |:---|:---|:---|
@@ -510,7 +510,7 @@
 | 改动 | 改前 | 改后 |
 |:---|:---|:---|
 | 去掉 `while rclpy.ok()` | 外层套了 `while` 死循环（实际只跑一次就 return） | 直接 `for` 循环重试，结构诚实 |
-| 调用方检查返回值 | `partol.get_current_pose()` 返回值被丢弃 | 赋值给 `pose_result`，None 时打 warn 日志 |
+| 调用方检查返回值 | `patrol.get_current_pose()` 返回值被丢弃 | 赋值给 `pose_result`，None 时打 warn 日志 |
 | 重试日志 | 无序号 | 加 `({i+1}/{max_retries})` 序号 |
 | 错别字 | `坐标换` | `坐标变换` |
 
@@ -525,8 +525,8 @@
 
 | 文件 | 路径 | 说明 |
 |:---|:---|:---|
-| partol_config.yaml | `src/autopartol_robot/config/partol_config.yaml` | 巡逻点配置 + 重试参数 + use_sim_time + CSV 路径 |
-| autopartol.launch.py | `src/autopartol_robot/launch/autopartol.launch.py` | 巡逻联合启动 + use_sim_time 传递 |
+| patrol_config.yaml | `src/patrol_mission/config/patrol_config.yaml` | 巡逻点配置 + 重试参数 + use_sim_time + CSV 路径 |
+| patrol.launch.py | `src/patrol_mission/launch/patrol.launch.py` | 巡逻联合启动 + use_sim_time 传递 |
 
 ---
 
@@ -614,7 +614,7 @@ succeeded + failed + timeout + canceled + rejected == total_goals
 
 **当前 10 点的来源**：在 9 点基础上，于「第8点 `4.0,-3.0,-2.356`」与「第9点 `0.0,0.0,1.571`」之间新增过渡点 `2.0,-3.0,3.1416`（yaw = 初始角 0° + 180°）。
 
-**核对依据**：`partol_config.yaml` 实有 10 组 `[x,y,yaw]`；`autopartol.launch.py` **不覆盖、不追加** `target_point`（仅传参文件路径）；全仓仅此一个 `partol_config.yaml`。
+**核对依据**：`patrol_config.yaml` 实有 10 组 `[x,y,yaw]`；`patrol.launch.py` **不覆盖、不追加** `target_point`（仅传参文件路径）；全仓仅此一个 `patrol_config.yaml`。
 
 ### 12.6 遗留目录处置
 
@@ -625,7 +625,7 @@ succeeded + failed + timeout + canceled + rejected == total_goals
 | 项 | 结论 |
 |:---|:---|
 | 卡号 | T-P1-01（2026-11-01 完成） |
-| 代码落点 | `partol_node.py` 的 `append_run_record()` |
+| 代码落点 | `patrol_node.py` 的 `append_run_record()` |
 | 参数名 | `csv_log_path`，默认 `~/ros2_ws/experiment_logs/patrol_runs.csv` |
 | 产出文件 | `experiment_logs/patrol_runs.csv` |
 | 写入时机 | 每轮巡逻结束（`while` 循环内、失败 `break` 之前） |
@@ -691,7 +691,7 @@ cd ~/ros2_ws && ./scripts/run_one_experiment.sh
 | S1 | 清理残留（`nav2_bringup`/`nav2_container`/`gzserver`/`gzclient` + `/dev/shm/gz*`、`/dev/shm/rmw*`） | — |
 | S2 | 起 `gazebo_test.launch.py` + `nav2_bringup`（`my_map.yaml` + `nav2_params_hybrid.yaml`） | 2 |
 | S3 | 等 `/scan` `/odom` `/cmd_vel` + action `navigate_to_pose` | 4 |
-| S4 | 起 `capture_truth_pose.py --watch`（先于巡逻，缓存 `/amcl_pose`）→ 起 `autopartol.launch.py` | 5 |
+| S4 | 起 `capture_truth_pose.py --watch`（先于巡逻，缓存 `/amcl_pose`）→ 起 `patrol.launch.py` | 5 |
 | S5 | 轮询 CSV 行数 +1 判定本轮完成 | 6 |
 | S6 | `capture_truth_pose.py --finalize` 采真值 + AMCL 末点 | 7 |
 | S7 | `trap` 清理并退出 | 0 |
@@ -775,8 +775,8 @@ cd ~/ros2_ws && ./scripts/run_one_experiment.sh
 1. `gazebo_test.launch.py` 未声明 `headless` 参数，但 `gazebo.sh` 传入 `headless:=true`，属历史遗留，本卡不改。
 2. 末点采集**必须在关 Gazebo 之前**（S6 在 S7 前），否则话题消失、真值永久丢失。
 3. 就绪等待失败属 S3，**此时巡逻尚未启动，不产生任何 CSV 行**，故用它做失败注入（`READY_TOPICS="/scan /nonexistent_topic"` + `READY_TIMEOUT=5`）零数据污染。
-4. 判定"本轮完成"用 **CSV 行数 +1**，不用 `ros2 launch` 进程退出——`autopartol.launch.py` 含 speech/vision 两个常驻节点，launch 进程不会随巡逻结束退出。
-5. **`install/` 是普通拷贝，不是软链**：改 `src/` 后必须 `colcon build` 才生效，否则运行的仍是旧副本（表现为"改了代码但行为没变"）。脚本 S2 已加硬校验：检查 install 内 world 是否含 `gazebo_ros_state`、`partol_node.py` 是否含 `need_nl`，缺失即 `exit 2` 报 `install_stale`。
+4. 判定"本轮完成"用 **CSV 行数 +1**，不用 `ros2 launch` 进程退出——`patrol.launch.py` 含 speech/vision 两个常驻节点，launch 进程不会随巡逻结束退出。
+5. **`install/` 是普通拷贝，不是软链**：改 `src/` 后必须 `colcon build` 才生效，否则运行的仍是旧副本（表现为"改了代码但行为没变"）。脚本 S2 已加硬校验：检查 install 内 world 是否含 `gazebo_ros_state`、`patrol_node.py` 是否含 `need_nl`，缺失即 `exit 2` 报 `install_stale`。
 6. **`set -u` 与 ROS `setup.bash` 冲突**：`install/setup.bash` L11 裸引用 `$COLCON_TRACE`，在 `set -u` 下触发 unbound variable 并**直接终止脚本**（表现为此前所有 run 都 `EXIT=1` 且停在 S2 之前）。脚本已用 `set +u` / `set -u` 包裹 source。
 7. **`gazebo_ros_state` 是 `WorldPlugin`**，`gzserver -s libgazebo_ros_state.so` 会被 Gazebo 拒绝（`incorrect plugin type`）且**不报错退出**，只在日志留 `[Err]`；必须写进 world SDF。
 
@@ -841,10 +841,10 @@ cd ~/ros2_ws && ./scripts/run_one_experiment.sh
 
 | 改动 | 文件 | 内容 |
 |:---|:---|:---|
-| 1 | `src/autopartol_robot/config/partol_config.yaml` | `max_rounds: 1` → `3` |
-| 2 | `src/pkg03_gazebo_20260814/config/nav2_params_hybrid.yaml` | `recovery_alpha_fast/slow: 0.0/0.0` → `0.1/0.001`，并补 3 行机制注释 |
+| 1 | `src/patrol_mission/config/patrol_config.yaml` | `max_rounds: 1` → `3` |
+| 2 | `src/patrol_simulation/config/nav2_params_hybrid.yaml` | `recovery_alpha_fast/slow: 0.0/0.0` → `0.1/0.001`，并补 3 行机制注释 |
 
-**未改动**：`partol_node.py`、`gazebo.sh`、`gazebo_ekf.sh`、`nav2_params.yaml`、`wpr_simulation2/config/nav2_params.yaml`、`ekf.yaml`。
+**未改动**：`patrol_node.py`、`gazebo.sh`、`gazebo_ekf.sh`、`nav2_params.yaml`、`wpr_simulation2/config/nav2_params.yaml`、`ekf.yaml`。
 
 ### 14.2 验证结果
 
@@ -883,13 +883,13 @@ w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
 | R3 | 角落旋转后是否仍被粒子云包围 | 🟡 | 若仍发生，根因不只在注入，需查 `update_min_a/d`(0.2/0.25) 与 `max_beams: 60` |
 | R4 | 多轮数据级验证 | 🟡 | 采 CSV + 真值，看第 2/3 轮末点是否逐轮劣化（关联 D-01） |
 | R5 | 同步 `nav2_params.yaml` 与 `wpr_simulation2` 副本 | 🟢 | 二者仍为 0.0/0.0，做 A/B 对照时会混入变量 |
-| R6 | 修正 `partol_config.yaml` 第 17 行注释措辞 | 🟢 | 现注释易被误读为「`max_rounds>1` 也会漂」 |
+| R6 | 修正 `patrol_config.yaml` 第 17 行注释措辞 | 🟢 | 现注释易被误读为「`max_rounds>1` 也会漂」 |
 
 ### 14.6 AMCL 参数单变量对照实验（2026-11-22 ~ 11-23，四组）
 
 **归档**：[docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md](file:///home/robot/ros2_ws/docs/experiments/AMCL_PARAM_SWEEP_ARCHIVE.md)（含失败组，原样保留）
 
-执行入口 `scripts/run_amcl_test.sh`：一条命令拉起 Gazebo + Nav2 + RViz2 + 真实巡航链路 `ros2 launch autopartol_robot autopartol.launch.py`，后台每 0.5 s 采真值（`/gazebo/model_states`）与 `/amcl_pose`，收尾自动算指标。分析用 `scripts/amcl_compare.py`（更新时刻口径并排）与 `scripts/odom_spin_probe.py`（原地转向比值探针）。
+执行入口 `scripts/run_amcl_test.sh`：一条命令拉起 Gazebo + Nav2 + RViz2 + 真实巡航链路 `ros2 launch patrol_mission patrol.launch.py`，后台每 0.5 s 采真值（`/gazebo/model_states`）与 `/amcl_pose`，收尾自动算指标。分析用 `scripts/amcl_compare.py`（更新时刻口径并排）与 `scripts/odom_spin_probe.py`（原地转向比值探针）。
 
 | 组 | 参数 | 结果 | 判定 |
 |:---:|:---|:---|:---|
@@ -923,7 +923,7 @@ w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
 
 ### 14.8 踩坑补充
 
-**`params_file` 路径决定是否需 build**：`gazebo.sh` 传的是 `src/` 下绝对路径，改 yaml 即生效；而 `autopartol.launch.py` 用 `get_package_share_directory()` 读 `install/` 副本，改 `partol_config.yaml` **必须 `colcon build`**（除非曾用 `--symlink-install`）。同一次改动里两个文件，生效方式不同。
+**`params_file` 路径决定是否需 build**：`gazebo.sh` 传的是 `src/` 下绝对路径，改 yaml 即生效；而 `patrol.launch.py` 用 `get_package_share_directory()` 读 `install/` 副本，改 `patrol_config.yaml` **必须 `colcon build`**（除非曾用 `--symlink-install`）。同一次改动里两个文件，生效方式不同。
 
 ---
 
@@ -933,8 +933,8 @@ w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
 
 | 包 | 改动 |
 |:---|:---|
-| `src/pkg03_gazebo_20260814` | `package.xml` `<license>MIT</license>` → `Apache-2.0`，目录内 `LICENSE`（原 MIT 全文）替换为根 `LICENSE` 的 Apache-2.0 全文 |
-| `src/autopartol_interfaces` | 同上 |
+| `src/patrol_simulation` | `package.xml` `<license>MIT</license>` → `Apache-2.0`，目录内 `LICENSE`（原 MIT 全文）替换为根 `LICENSE` 的 Apache-2.0 全文 |
+| `src/patrol_interfaces` | 同上 |
 
 **为什么要连 `LICENSE` 文件一起换**：只改 `package.xml` 会造成「声明说 Apache、同目录文件说 MIT」的新矛盾。
 
@@ -957,7 +957,7 @@ w_diff  = max(0, 1 - w_fast / w_slow)       # 随机粒子注入概率
 
 | # | 症状 | 根因 | 修法 |
 |:---:|:---|:---|:---|
-| 1 | `fail S2 install_stale:newline_guard_missing` | `INST_NODE` 写死非 symlink 安装路径 `install/autopartol_robot/lib/python3.10/site-packages/autopartol_robot/partol_node.py`；本工作空间是 **`--symlink-install`**，`install/` 里只有 `autopartol-robot.egg-link` 指向 `build/`，无实体文件 | 改为按运行时真实导入路径解析（`python3 -c "import autopartol_robot..."`），取不到再兜底 `src/`，并打印 `partol_node source:` 便于事后核对 |
+| 1 | `fail S2 install_stale:newline_guard_missing` | `INST_NODE` 写死非 symlink 安装路径 `install/patrol_mission/lib/python3.10/site-packages/patrol_mission/patrol_node.py`；本工作空间是 **`--symlink-install`**，`install/` 里只有 `patrol_mission.egg-link` 指向 `build/`，无实体文件 | 改为按运行时真实导入路径解析（`python3 -c "import patrol_mission..."`），取不到再兜底 `src/`，并打印 `patrol_node source:` 便于事后核对 |
 | 2 | `fail S2 stale_ros_graph:scan_or_amcl_present` | 判据是「话题出现在 `ros2 topic list` 就 fail」。但 **ROS 2 只要有订阅者，话题就会出现在图里**；`capture_truth_pose.py` 第 62 行订阅 `/amcl_pose`，于是 `Publisher count: 0 / Subscription count: 1` 也触发误报 | 新增 `topic_has_publisher()`，改判 `ros2 topic info` 的 `Publisher count > 0`；`wait_topics_gone` 同步改用该判据（原写法会让每轮收尾白等满 20 s） |
 | 3 | 语义不符 | `fail` 文案仍写 `scan_or_amcl_present` | 改为 `scan_or_amcl_published`，与实际判据一致 |
 
@@ -1047,7 +1047,7 @@ if [ "$COMPLETED_NOW" -ge "$MAX_RUNS" ]; then   # 16 >= 15
 | 2 | `wait_topics_gone` 首轮超时不再直接判脏，改为「停 daemon → 预热 → 二次确认」 | 偶发 `[FAIL] step=S7 reason=teardown_dirty:topics_published exit=8` | `run_one_20261128_004741` 报脏；紧接着 `run_one_20261128_005242` 开跑时同一判据报「无发布者」 |
 | 3 | `teardown_verify` 进程组未清空时跳过话题判定；首轮预算 5 s → 12 s | 同一根因被写成两个脏项（`proc_group_alive,topics_published`），误导成两个独立故障 | 同上 |
 | 4 | `recover_stale` 话题等待 5 s → 12 s | 「连着跑第二次」在清理环节假失败 | 同上 |
-| 5 | `max_rounds` 改为 launch 参数透传；`partol_node` 默认值 3 → 1 与 yaml 对齐 | yaml 写 1、代码默认 3 的纸面矛盾（15.7 遗留项） | 改轮数时改 yaml 生效、改代码无效 |
+| 5 | `max_rounds` 改为 launch 参数透传；`patrol_node` 默认值 3 → 1 与 yaml 对齐 | yaml 写 1、代码默认 3 的纸面矛盾（15.7 遗留项） | 改轮数时改 yaml 生效、改代码无效 |
 | 6 | 图片核验改用跑前/跑后快照差集，期望数取 CSV 末行 `succeeded` | 日志「图片保存成功」少打一条导致假阴性 | `call_async` 异步竞态：末张图 imwrite 与回调都在日志终句之后 |
 
 ### 16.2 「半天不开始巡航」的根因推导
